@@ -1,0 +1,57 @@
+{
+  "name": "or_mixed_simple_and_exists",
+  "ast": {
+    "table": "users",
+    "where": {
+      "type": "or",
+      "conditions": [
+        {
+          "type": "simple",
+          "op": "=",
+          "left": {
+            "type": "column",
+            "name": "active"
+          },
+          "right": {
+            "type": "literal",
+            "value": true
+          }
+        },
+        {
+          "type": "correlatedSubquery",
+          "op": "EXISTS",
+          "related": {
+            "correlation": {
+              "parentField": [
+                "id"
+              ],
+              "childField": [
+                "userId"
+              ]
+            },
+            "subquery": {
+              "table": "posts",
+              "alias": "posts"
+            }
+          }
+        }
+      ]
+    }
+  },
+  "costModel": {
+    "kind": "perTable",
+    "rows": {
+      "users": 1000
+    },
+    "startup": {
+      "posts": 50,
+      "comments": 50,
+      "likes": 50,
+      "labels": 50
+    },
+    "defaultRows": 1
+  },
+  "flips": [
+    true
+  ]
+}

@@ -1,0 +1,15 @@
+{
+  // Emit profile: compile `src/` to `dist/` as runnable ESM `.js` + `.d.ts` (what we publish).
+  // Mirrors the other packages (TS 5.7+ `rewriteRelativeImportExtensions`). Tests excluded.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "rootDir": "./src",
+    "outDir": "./dist",
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true,
+    "rewriteRelativeImportExtensions": true
+  },
+  "include": ["src"]
+}

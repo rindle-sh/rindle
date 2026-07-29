@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-plugin-manifest.json",
+  "name": "rindle",
+  "displayName": "Rindle",
+  "version": "0.1.0",
+  "description": "Build local-first synced apps on Rindle: live queries kept exact by incremental view maintenance, optimistic writes, one isomorphic mutator body for both tiers. Ships the building-rindle-apps skill, a /rindle:quickstart command, a code reviewer agent, and write-time guardrails.",
+  "author": { "name": "Rindle", "url": "https://rindle.sh" },
+  "homepage": "https://rindle.sh/docs",
+  "license": "Apache-2.0",
+  "keywords": [
+    "rindle",
+    "local-first",
+    "sync",
+    "live-queries",
+    "ivm",
+    "sqlite",
+    "optimistic-updates",
+    "database"
+  ]
+}

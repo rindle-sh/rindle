@@ -1,0 +1,39 @@
+{
+  "name": "or_only_simple",
+  "ast": {
+    "table": "users",
+    "where": {
+      "type": "or",
+      "conditions": [
+        {
+          "type": "simple",
+          "op": "=",
+          "left": {
+            "type": "column",
+            "name": "active"
+          },
+          "right": {
+            "type": "literal",
+            "value": true
+          }
+        },
+        {
+          "type": "simple",
+          "op": "=",
+          "left": {
+            "type": "column",
+            "name": "active"
+          },
+          "right": {
+            "type": "literal",
+            "value": true
+          }
+        }
+      ]
+    }
+  },
+  "costModel": {
+    "kind": "simple"
+  },
+  "flips": []
+}

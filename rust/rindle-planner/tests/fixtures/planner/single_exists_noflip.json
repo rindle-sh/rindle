@@ -1,0 +1,34 @@
+{
+  "name": "single_exists_noflip",
+  "ast": {
+    "table": "users",
+    "where": {
+      "type": "correlatedSubquery",
+      "op": "EXISTS",
+      "related": {
+        "correlation": {
+          "parentField": [
+            "id"
+          ],
+          "childField": [
+            "userId"
+          ]
+        },
+        "subquery": {
+          "table": "posts",
+          "alias": "posts"
+        }
+      }
+    }
+  },
+  "costModel": {
+    "kind": "perTable",
+    "rows": {
+      "users": 10
+    },
+    "defaultRows": 1000
+  },
+  "flips": [
+    false
+  ]
+}

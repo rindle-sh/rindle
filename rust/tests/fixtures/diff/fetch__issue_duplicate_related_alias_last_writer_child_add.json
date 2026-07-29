@@ -1,0 +1,154 @@
+{
+  "kind": "fetch",
+  "input": {
+    "sources": {
+      "issue": {
+        "columns": {
+          "id": {
+            "type": "number"
+          },
+          "val": {
+            "type": "number"
+          }
+        },
+        "primaryKeys": [
+          "id"
+        ]
+      },
+      "comment": {
+        "columns": {
+          "id": {
+            "type": "number"
+          },
+          "issue": {
+            "type": "number"
+          },
+          "val": {
+            "type": "number"
+          }
+        },
+        "primaryKeys": [
+          "id"
+        ]
+      }
+    },
+    "sourceContents": {
+      "issue": [
+        {
+          "id": 1,
+          "val": 100
+        }
+      ],
+      "comment": [
+        {
+          "id": 10,
+          "issue": 1,
+          "val": 500
+        },
+        {
+          "id": 11,
+          "issue": 1,
+          "val": 900
+        },
+        {
+          "id": 12,
+          "issue": 1,
+          "val": 100
+        }
+      ]
+    },
+    "ast": {
+      "table": "issue",
+      "orderBy": [
+        [
+          "id",
+          "asc"
+        ]
+      ],
+      "related": [
+        {
+          "correlation": {
+            "parentField": [
+              "id"
+            ],
+            "childField": [
+              "issue"
+            ]
+          },
+          "subquery": {
+            "table": "comment",
+            "alias": "comments",
+            "orderBy": [
+              [
+                "val",
+                "asc"
+              ],
+              [
+                "id",
+                "asc"
+              ]
+            ]
+          }
+        },
+        {
+          "correlation": {
+            "parentField": [
+              "id"
+            ],
+            "childField": [
+              "issue"
+            ]
+          },
+          "subquery": {
+            "table": "comment",
+            "alias": "comments",
+            "orderBy": [
+              [
+                "val",
+                "desc"
+              ],
+              [
+                "id",
+                "asc"
+              ]
+            ]
+          }
+        }
+      ]
+    },
+    "format": {
+      "singular": false,
+      "relationships": {
+        "comments": {
+          "singular": false,
+          "relationships": {}
+        }
+      }
+    }
+  },
+  "expected": {
+    "data": [
+      {
+        "id": 1,
+        "val": 100,
+        "comments": [
+          {
+            "id": 11,
+            "issue": 1,
+            "val": 900
+          },
+          {
+            "id": 10,
+            "issue": 1,
+            "val": 500
+          },
+          {
+            "id": 12,
+            "issue": 1,
+            "val": 100
+          }
+        ]
+      }
+    ]
+  }
+}

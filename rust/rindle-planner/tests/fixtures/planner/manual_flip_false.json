@@ -1,0 +1,41 @@
+{
+  "name": "manual_flip_false",
+  "ast": {
+    "table": "users",
+    "where": {
+      "type": "correlatedSubquery",
+      "op": "EXISTS",
+      "flip": false,
+      "related": {
+        "correlation": {
+          "parentField": [
+            "id"
+          ],
+          "childField": [
+            "userId"
+          ]
+        },
+        "subquery": {
+          "table": "posts",
+          "alias": "posts"
+        }
+      }
+    }
+  },
+  "costModel": {
+    "kind": "perTable",
+    "rows": {
+      "users": 1000
+    },
+    "startup": {
+      "posts": 50,
+      "comments": 50,
+      "likes": 50,
+      "labels": 50
+    },
+    "defaultRows": 1
+  },
+  "flips": [
+    false
+  ]
+}

@@ -1,0 +1,41 @@
+{
+  "name": "@rindle/normalized",
+  "version": "0.0.0",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/rindle-sh/rindle.git",
+    "directory": "packages/normalized"
+  },
+  "type": "module",
+  "description": "Normalized local-first client glue: NormalizedSync (cross-query refcount + GC + footprint diffing) driving the wasm Db's base tables (NORMALIZED-CHANGES-DESIGN.md §5).",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "@rindle/source": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "src",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit",
+    "test": "tsc --noEmit && node --conditions=@rindle/source --test test/*.test.ts && node --conditions=@rindle/source test/e2e.mjs && node --conditions=@rindle/source test/projection.e2e.mjs"
+  },
+  "dependencies": {
+    "@rindle/client": "workspace:*",
+    "@rindle/wasm": "workspace:*"
+  },
+  "devDependencies": {
+    "@rindle/replica": "workspace:*",
+    "@types/node": "^22.10.0",
+    "typescript": "^5.7.0"
+  }
+}

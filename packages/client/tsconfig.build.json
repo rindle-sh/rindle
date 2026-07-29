@@ -1,0 +1,16 @@
+{
+  // Emit profile: compile `src/` to `dist/` as runnable ESM `.js` + `.d.ts` (what we publish).
+  // TS 5.7+ `rewriteRelativeImportExtensions` rewrites the `./x.ts` import specifiers (which
+  // keep `node --test` build-free) to `./x.js` in the emitted output. Tests are excluded.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "rootDir": "./src",
+    "outDir": "./dist",
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true,
+    "rewriteRelativeImportExtensions": true
+  },
+  "include": ["src"]
+}

@@ -1,0 +1,54 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "rindle-forum",
+  // The rindle.sh Cloudflare account (same zone as the issue tracker). Change to your own account id.
+  "account_id": "<your-cloudflare-account-id>",
+  "compatibility_date": "2026-05-28",
+
+  // worker.ts is the Cloudflare Worker entry: it wraps the SSR+API handler (src/server.ts — the
+  // auto-detected Start `server.entry`). Static assets (hashed JS/CSS) are served from Cloudflare's
+  // asset server first; pages (asset misses) fall through to the Worker for SSR. The browser talks to
+  // the daemon's public ws DIRECTLY (wss) — never this Worker.
+  //
+  // BUILD: `CF=1 vite build` (via @cloudflare/vite-plugin, see vite.config.ts) bundles THIS `main`
+  // (worker.ts) for workerd in the `ssr` environment. The plugin emits the built Worker to dist/server/
+  // (+ a generated dist/server/wrangler.json) and the client bundle to dist/client/.
+  "main": "./worker.ts",
+
+  // `nodejs_compat`: server/seed.ts (shared with the Node entrypoints) reads `process.env`/`process.argv`
+  // at module top — this provides `process` so it loads cleanly under workerd.
+  "compatibility_flags": ["nodejs_compat"],
+
+  // forum.rindle.sh — a subdomain of the rindle.sh zone (same Cloudflare account), so `wrangler deploy`
+  // provisions the DNS record + TLS cert automatically. Same-origin keeps the SPA's /api/rindle/* calls
+  // CORS-free; the ws goes cross-origin to the configured data-plane edge.
+  "routes": [
+    { "pattern": "forum.rindle.sh", "custom_domain": true }
+  ],
+
+  // The ONE topology (design 214) — these are the DEPLOYED values; `pnpm dev` uses Vite + the local
+  // pair, not this file. A Headwaters-managed deployment uses one app hostname for both values;
+  // path routing at the OVH edge sends reads and writes to the right process.
+  //   PUBLIC_ORIGIN     — this deployment's own origin; SSR first-paint reads loop back here.
+  // The two bearer tokens are SECRETS, set after the first deploy (README):
+  //   `wrangler secret put DAEMON_TOKEN`      (= the follower's DAEMON_TOKEN)
+  //   `wrangler secret put REPLICATOR_TOKEN`  (= the master's  WRITE_TOKEN)
+  // Neither token ever reaches the browser. REPLICATOR_ORIGIN is required — a follower has no write
+  // plane; unset it and every write 404s.
+  "vars": {
+    "DAEMON_ORIGIN": "http://127.0.0.1:7600",
+    "REPLICATOR_ORIGIN": "http://127.0.0.1:7611",
+    "PUBLIC_ORIGIN": "https://forum.rindle.sh"
+  },
+
+  "assets": {
+    "directory": "./dist/client",
+    "binding": "ASSETS",
+    "not_found_handling": "none",
+    "run_worker_first": ["/api/rindle/*"]
+  },
+
+  "observability": {
+    "enabled": true
+  }
+}

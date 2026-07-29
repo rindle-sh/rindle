@@ -1,0 +1,14 @@
+{
+  // Emit profile: compile `src/` → `dist/` (.js + .d.ts). Tests excluded.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "rootDir": "./src",
+    "outDir": "./dist",
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true,
+    "rewriteRelativeImportExtensions": true
+  },
+  "include": ["src"]
+}

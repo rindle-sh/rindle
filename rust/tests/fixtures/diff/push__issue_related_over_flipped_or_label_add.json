@@ -1,0 +1,204 @@
+{
+  "kind": "push",
+  "input": {
+    "sources": {
+      "issue": {
+        "columns": {
+          "id": {
+            "type": "number"
+          },
+          "owner": {
+            "type": "number"
+          }
+        },
+        "primaryKeys": [
+          "id"
+        ]
+      },
+      "comment": {
+        "columns": {
+          "id": {
+            "type": "number"
+          },
+          "issue": {
+            "type": "number"
+          }
+        },
+        "primaryKeys": [
+          "id"
+        ]
+      },
+      "label": {
+        "columns": {
+          "id": {
+            "type": "number"
+          },
+          "issue": {
+            "type": "number"
+          }
+        },
+        "primaryKeys": [
+          "id"
+        ]
+      }
+    },
+    "sourceContents": {
+      "issue": [
+        {
+          "id": 1,
+          "owner": 1
+        },
+        {
+          "id": 2,
+          "owner": 2
+        }
+      ],
+      "comment": [
+        {
+          "id": 10,
+          "issue": 2
+        }
+      ],
+      "label": [
+        {
+          "id": 50,
+          "issue": 1
+        }
+      ]
+    },
+    "ast": {
+      "table": "issue",
+      "where": {
+        "type": "or",
+        "conditions": [
+          {
+            "type": "simple",
+            "op": "=",
+            "left": {
+              "type": "column",
+              "name": "owner"
+            },
+            "right": {
+              "type": "literal",
+              "value": 1
+            }
+          },
+          {
+            "type": "correlatedSubquery",
+            "op": "EXISTS",
+            "related": {
+              "correlation": {
+                "parentField": [
+                  "id"
+                ],
+                "childField": [
+                  "issue"
+                ]
+              },
+              "subquery": {
+                "table": "comment",
+                "alias": "comments"
+              }
+            },
+            "flip": true
+          }
+        ]
+      },
+      "orderBy": [
+        [
+          "id",
+          "asc"
+        ]
+      ],
+      "related": [
+        {
+          "correlation": {
+            "parentField": [
+              "id"
+            ],
+            "childField": [
+              "issue"
+            ]
+          },
+          "subquery": {
+            "table": "label",
+            "alias": "labels",
+            "orderBy": [
+              [
+                "id",
+                "asc"
+              ]
+            ]
+          }
+        }
+      ]
+    },
+    "format": {
+      "singular": false,
+      "relationships": {
+        "labels": {
+          "singular": false,
+          "relationships": {}
+        }
+      }
+    },
+    "pushes": [
+      [
+        "label",
+        {
+          "type": "add",
+          "row": {
+            "id": 51,
+            "issue": 2
+          }
+        }
+      ]
+    ]
+  },
+  "expected": {
+    "data": [
+      {
+        "id": 1,
+        "owner": 1,
+        "labels": [
+          {
+            "id": 50,
+            "issue": 1
+          }
+        ]
+      },
+      {
+        "id": 2,
+        "owner": 2,
+        "labels": [
+          {
+            "id": 51,
+            "issue": 2
+          }
+        ]
+      }
+    ],
+    "pushes": [
+      {
+        "type": "child",
+        "row": {
+          "id": 2,
+          "owner": 2
+        },
+        "child": {
+          "relationshipName": "labels",
+          "change": {
+            "type": "add",
+            "node": {
+              "row": {
+                "id": 51,
+                "issue": 2
+              },
+              "relationships": {}
+            }
+          }
+        }
+      }
+    ]
+  }
+}

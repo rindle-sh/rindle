@@ -1,0 +1,36 @@
+{
+  "name": "@rindle/client",
+  "version": "0.0.0",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/rindle-sh/rindle.git",
+    "directory": "packages/client"
+  },
+  "type": "module",
+  "description": "Backend-agnostic flat-change client core: typed schema, query builder, ArrayView, comparator, Backend seam.",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "@rindle/source": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "src",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "test": "tsc --noEmit && node --test test/*.test.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "typescript": "^5.7.0"
+  }
+}

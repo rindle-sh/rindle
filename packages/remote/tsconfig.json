@@ -1,0 +1,18 @@
+{
+  // Typecheck profile. DOM lib for the global `WebSocket`/`MessageEvent` the ws transport uses
+  // (Node 22+ also provides them at runtime). `customConditions` resolves @rindle/client from source.
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "lib": ["ES2022", "DOM"],
+    "strict": true,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "verbatimModuleSyntax": true,
+    "allowImportingTsExtensions": true,
+    "customConditions": ["@rindle/source"],
+    "types": ["node"]
+  },
+  "include": ["src", "test"]
+}

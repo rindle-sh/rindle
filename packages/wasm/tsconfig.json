@@ -1,0 +1,19 @@
+{
+  // Typecheck profile (no emit). DOM lib: this package runs in the browser (fetch/WebAssembly/
+  // Response, used by the generated `pkg/rindle.d.ts`). `customConditions` resolves `@rindle/client`
+  // to its TS source, so typecheck/build never depends on the sibling's `dist/` being built.
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "lib": ["ES2022", "DOM"],
+    "strict": true,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "verbatimModuleSyntax": true,
+    "allowImportingTsExtensions": true,
+    "customConditions": ["@rindle/source"],
+    "types": ["node"]
+  },
+  "include": ["src"]
+}

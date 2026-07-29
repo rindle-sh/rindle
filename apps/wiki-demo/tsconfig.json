@@ -1,0 +1,19 @@
+{
+  // Mirrors the sibling packages: `customConditions` resolves @rindle/* from source (no built
+  // dist needed), bundler resolution allows `.ts` import specifiers. DOM lib for the global
+  // `WebSocket`/`fetch` the remote client + HN source use (Node 22+ provides them at runtime).
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "lib": ["ES2022", "DOM"],
+    "strict": true,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "verbatimModuleSyntax": true,
+    "allowImportingTsExtensions": true,
+    "customConditions": ["@rindle/source"],
+    "types": ["node"]
+  },
+  "include": ["src", "test"]
+}

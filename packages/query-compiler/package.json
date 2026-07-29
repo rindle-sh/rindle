@@ -1,0 +1,39 @@
+{
+  "name": "@rindle/query-compiler",
+  "version": "0.0.0",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/rindle-sh/rindle.git",
+    "directory": "packages/query-compiler"
+  },
+  "type": "module",
+  "description": "Compiles a Rindle query AST to one SQL SELECT (whole nested result as a single JSON column) for a live SQL backend — the server realization of 203-MUTATOR-READS Phase 2 (POSTGRES-READ-COMPILER-DESIGN.md). Postgres dialect drives the BYO-Postgres mutator read; the SQLite dialect drives the daemon-backend mutator read through an interactive mutation session (and doubles as the offline differential oracle).",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "@rindle/source": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "src",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit",
+    "test": "tsc --noEmit && node --conditions=@rindle/source --test test/*.test.ts"
+  },
+  "dependencies": {
+    "@rindle/client": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "typescript": "^5.7.0"
+  }
+}

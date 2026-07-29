@@ -1,0 +1,161 @@
+{
+  "kind": "fetch",
+  "input": {
+    "sources": {
+      "issue": {
+        "columns": {
+          "id": {
+            "type": "number"
+          },
+          "owner": {
+            "type": "number"
+          }
+        },
+        "primaryKeys": [
+          "id"
+        ]
+      },
+      "comment": {
+        "columns": {
+          "id": {
+            "type": "number"
+          },
+          "issue": {
+            "type": "number"
+          }
+        },
+        "primaryKeys": [
+          "id"
+        ]
+      },
+      "label": {
+        "columns": {
+          "id": {
+            "type": "number"
+          },
+          "issue": {
+            "type": "number"
+          }
+        },
+        "primaryKeys": [
+          "id"
+        ]
+      }
+    },
+    "sourceContents": {
+      "issue": [
+        {
+          "id": 1,
+          "owner": 1
+        },
+        {
+          "id": 2,
+          "owner": 2
+        },
+        {
+          "id": 3,
+          "owner": 2
+        },
+        {
+          "id": 4,
+          "owner": 2
+        }
+      ],
+      "comment": [
+        {
+          "id": 10,
+          "issue": 2
+        }
+      ],
+      "label": [
+        {
+          "id": 20,
+          "issue": 3
+        }
+      ]
+    },
+    "ast": {
+      "table": "issue",
+      "where": {
+        "type": "or",
+        "conditions": [
+          {
+            "type": "simple",
+            "op": "=",
+            "left": {
+              "type": "column",
+              "name": "owner"
+            },
+            "right": {
+              "type": "literal",
+              "value": 1
+            }
+          },
+          {
+            "type": "correlatedSubquery",
+            "op": "EXISTS",
+            "related": {
+              "correlation": {
+                "parentField": [
+                  "id"
+                ],
+                "childField": [
+                  "issue"
+                ]
+              },
+              "subquery": {
+                "table": "comment",
+                "alias": "comments"
+              }
+            },
+            "flip": true
+          },
+          {
+            "type": "correlatedSubquery",
+            "op": "EXISTS",
+            "related": {
+              "correlation": {
+                "parentField": [
+                  "id"
+                ],
+                "childField": [
+                  "issue"
+                ]
+              },
+              "subquery": {
+                "table": "label",
+                "alias": "labels"
+              }
+            }
+          }
+        ]
+      },
+      "orderBy": [
+        [
+          "id",
+          "asc"
+        ]
+      ]
+    },
+    "format": {
+      "singular": false,
+      "relationships": {}
+    }
+  },
+  "expected": {
+    "data": [
+      {
+        "id": 1,
+        "owner": 1
+      },
+      {
+        "id": 2,
+        "owner": 2
+      },
+      {
+        "id": 3,
+        "owner": 2
+      }
+    ]
+  }
+}

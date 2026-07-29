@@ -1,0 +1,43 @@
+{
+  "name": "@rindle/server",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Node WebSocket server serving the @rindle/remote protocol from the SQLite-backed @rindle/replica engine.",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "@rindle/source": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "src",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit",
+    "test": "node --conditions=@rindle/source test/e2e.mjs && node --conditions=@rindle/source test/normalized.e2e.mjs && node --conditions=@rindle/source test/optimistic.e2e.mjs && node --conditions=@rindle/source test/repro-high.e2e.mjs && node --conditions=@rindle/source test/fleet.e2e.mjs",
+    "test:rust-daemon": "node --conditions=@rindle/source test/daemon-rust.e2e.mjs && node --conditions=@rindle/source test/ssr.e2e.mjs && node --conditions=@rindle/source test/mutator-read-parity.e2e.mjs && node --conditions=@rindle/source examples/serverless-local-first/rust-daemon.mjs"
+  },
+  "dependencies": {
+    "@rindle/client": "workspace:*",
+    "@rindle/remote": "workspace:*",
+    "@rindle/replica": "workspace:*",
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "@types/ws": "^8.5.13",
+    "@rindle/api-server": "workspace:*",
+    "@rindle/daemon-client": "workspace:*",
+    "@rindle/normalized": "workspace:*",
+    "@rindle/optimistic": "workspace:*",
+    "@rindle/wasm": "workspace:*",
+    "typescript": "^5.7.0"
+  }
+}

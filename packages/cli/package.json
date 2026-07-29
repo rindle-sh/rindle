@@ -1,0 +1,55 @@
+{
+  "name": "@rindle/cli",
+  "version": "0.0.0",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/rindle-sh/rindle.git",
+    "directory": "packages/cli"
+  },
+  "type": "module",
+  "description": "The Rindle toolchain for JS devs: prebuilt CLI, write-master, follower, and local fleet-edge binaries. `rindle dev` owns the fleet + app lifecycle with topology-derived bindings.",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "sideEffects": false,
+  "bin": {
+    "rindle": "./dist/cli.js"
+  },
+  "exports": {
+    ".": {
+      "@rindle/source": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "src",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit",
+    "test": "tsc --noEmit && node --conditions=@rindle/source --test test/*.test.ts",
+    "build:npm": "node scripts/build-npm-packages.mjs"
+  },
+  "rindle": {
+    "binaries": ["rindle", "rindled", "rindle-replicator", "rindle-dev-edge"],
+    "repository": "rindle-sh/rindle",
+    "targets": [
+      { "rust": "aarch64-apple-darwin", "os": "darwin", "cpu": "arm64" },
+      { "rust": "x86_64-apple-darwin", "os": "darwin", "cpu": "x64" },
+      { "rust": "x86_64-unknown-linux-gnu", "os": "linux", "cpu": "x64", "libc": "gnu" },
+      { "rust": "aarch64-unknown-linux-gnu", "os": "linux", "cpu": "arm64", "libc": "gnu" },
+      { "rust": "x86_64-unknown-linux-musl", "os": "linux", "cpu": "x64", "libc": "musl" },
+      { "rust": "aarch64-unknown-linux-musl", "os": "linux", "cpu": "arm64", "libc": "musl" }
+    ]
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "typescript": "^5.7.0"
+  }
+}

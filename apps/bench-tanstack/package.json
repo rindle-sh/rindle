@@ -1,0 +1,17 @@
+{
+  "name": "@rindle/bench-tanstack",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Head-to-head benchmark: the @rindle/wasm in-process IVM store vs TanStack DB (d2ts), over a large-ish dataset, simple→complex queries, on both the hydrate-from-scratch and incremental paths.",
+  "scripts": {
+    "bench": "node --conditions=@rindle/source --expose-gc src/bench.ts"
+  },
+  "dependencies": {
+    "@rindle/wasm": "workspace:*",
+    "@tanstack/db": "^0.6.10"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0"
+  }
+}

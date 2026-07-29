@@ -1,0 +1,13 @@
+node_modules
+dist
+.rindled
+*.db
+*.db-*
+.DS_Store
+*.log
+
+# Rindle Cloud: ignore the rendered manifests, but COMMIT the binding (.rindle/cloud.json) so
+# `rindle deploy` re-attaches future deploys to the same managed app.
+/rindle.json
+/.rindle/*
+!/.rindle/cloud.json

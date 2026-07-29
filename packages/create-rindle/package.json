@@ -1,0 +1,38 @@
+{
+  "name": "create-rindle",
+  "version": "0.0.0",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/rindle-sh/rindle.git",
+    "directory": "packages/create-rindle"
+  },
+  "type": "module",
+  "description": "Scaffold a new SQL-first Rindle app on TanStack Start — `npm create rindle@latest`. The migrations are the source of truth; the @rindle/client schema is generated from them, and the browser runs the in-process wasm IVM engine.",
+  "bin": {
+    "create-rindle": "./index.mjs"
+  },
+  "files": [
+    "index.mjs",
+    "lib",
+    "templates",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "typecheck": "node --check index.mjs && node --check lib/scaffold.mjs",
+    "test": "node --test test/*.test.mjs"
+  },
+  "keywords": [
+    "rindle",
+    "tanstack",
+    "sync",
+    "local-first",
+    "scaffold",
+    "create",
+    "sqlite",
+    "ivm"
+  ]
+}

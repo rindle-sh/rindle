@@ -1,0 +1,140 @@
+{
+  "kind": "push",
+  "input": {
+    "sources": {
+      "issue": {
+        "columns": {
+          "id": {
+            "type": "number"
+          },
+          "owner": {
+            "type": "number"
+          },
+          "score": {
+            "type": "number"
+          }
+        },
+        "primaryKeys": [
+          "id"
+        ]
+      }
+    },
+    "sourceContents": {
+      "issue": [
+        {
+          "id": 1,
+          "owner": 1,
+          "score": 10
+        },
+        {
+          "id": 2,
+          "owner": 2,
+          "score": 20
+        },
+        {
+          "id": 3,
+          "owner": 1,
+          "score": 30
+        },
+        {
+          "id": 4,
+          "owner": 1,
+          "score": 40
+        }
+      ]
+    },
+    "ast": {
+      "table": "issue",
+      "where": {
+        "type": "simple",
+        "op": "=",
+        "left": {
+          "type": "column",
+          "name": "owner"
+        },
+        "right": {
+          "type": "literal",
+          "value": 1
+        }
+      },
+      "orderBy": [
+        [
+          "score",
+          "desc"
+        ],
+        [
+          "id",
+          "asc"
+        ]
+      ],
+      "start": {
+        "row": {
+          "score": 40,
+          "id": 4
+        },
+        "exclusive": true
+      },
+      "limit": 2
+    },
+    "format": {
+      "singular": false,
+      "relationships": {}
+    },
+    "pushes": [
+      [
+        "issue",
+        {
+          "type": "edit",
+          "oldRow": {
+            "id": 2,
+            "owner": 2,
+            "score": 20
+          },
+          "row": {
+            "id": 2,
+            "owner": 1,
+            "score": 35
+          }
+        }
+      ]
+    ]
+  },
+  "expected": {
+    "data": [
+      {
+        "id": 2,
+        "owner": 1,
+        "score": 35
+      },
+      {
+        "id": 3,
+        "owner": 1,
+        "score": 30
+      }
+    ],
+    "pushes": [
+      {
+        "type": "remove",
+        "node": {
+          "row": {
+            "id": 1,
+            "owner": 1,
+            "score": 10
+          },
+          "relationships": {}
+        }
+      },
+      {
+        "type": "add",
+        "node": {
+          "row": {
+            "id": 2,
+            "owner": 1,
+            "score": 35
+          },
+          "relationships": {}
+        }
+      }
+    ]
+  }
+}

@@ -1,0 +1,99 @@
+{
+  "kind": "fetch",
+  "input": {
+    "sources": {
+      "issue": {
+        "columns": {
+          "id": {
+            "type": "number"
+          },
+          "val": {
+            "type": "number"
+          }
+        },
+        "primaryKeys": [
+          "id"
+        ]
+      },
+      "comment": {
+        "columns": {
+          "id": {
+            "type": "number"
+          },
+          "issue": {
+            "type": "number"
+          },
+          "val": {
+            "type": "number"
+          }
+        },
+        "primaryKeys": [
+          "id"
+        ]
+      }
+    },
+    "sourceContents": {
+      "issue": [
+        {
+          "id": 1,
+          "val": 100
+        },
+        {
+          "id": 2,
+          "val": 200
+        },
+        {
+          "id": 3,
+          "val": 300
+        }
+      ],
+      "comment": [
+        {
+          "id": 30,
+          "issue": 3,
+          "val": 900
+        }
+      ]
+    },
+    "ast": {
+      "table": "issue",
+      "where": {
+        "type": "correlatedSubquery",
+        "op": "EXISTS",
+        "related": {
+          "correlation": {
+            "parentField": [
+              "id"
+            ],
+            "childField": [
+              "issue"
+            ]
+          },
+          "subquery": {
+            "table": "comment",
+            "alias": "comments"
+          }
+        },
+        "flip": true
+      },
+      "orderBy": [
+        [
+          "id",
+          "asc"
+        ]
+      ]
+    },
+    "format": {
+      "singular": false,
+      "relationships": {}
+    }
+  },
+  "expected": {
+    "data": [
+      {
+        "id": 3,
+        "val": 300
+      }
+    ]
+  }
+}

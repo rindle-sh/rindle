@@ -1,0 +1,10 @@
+{
+  "name": "plain_users",
+  "ast": {
+    "table": "users"
+  },
+  "costModel": {
+    "kind": "simple"
+  },
+  "flips": []
+}

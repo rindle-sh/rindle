@@ -1,0 +1,129 @@
+/* Rindle Forum — paper + dot-grid aesthetic borrowed from the product page (Hanken Grotesk / DM Mono,
+   orange accent). Deliberately compact: a scaffold's worth of styling, not a design system. */
+
+:root {
+  --paper: #f2ede3;
+  --ink: #1c1a17;
+  --muted: #6b645a;
+  --line: #ddd5c7;
+  --card: #fbf8f2;
+  --accent: #e8590c;
+  --accent-soft: #fbe6d6;
+  --radius: 10px;
+  --maxw: 860px;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: "Hanken Grotesk", system-ui, sans-serif;
+  font-size: 16px;
+  line-height: 1.5;
+}
+
+a { color: inherit; text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+/* ---------------------------------------------------------------- top bar */
+.rf-topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 20px;
+  border-bottom: 1px solid var(--line);
+  background: var(--card);
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+.rf-wordmark { font-weight: 800; font-size: 1.15rem; letter-spacing: -0.02em; }
+.rf-wordmark span { color: var(--accent); }
+.rf-topbar-right { display: flex; align-items: center; gap: 12px; }
+.rf-whoami { font-size: 0.85rem; color: var(--muted); font-family: "DM Mono", monospace; }
+.rf-whoami b { color: var(--ink); }
+
+/* ---------------------------------------------------------------- layout */
+.rf-main { max-width: var(--maxw); margin: 0 auto; padding: 28px 20px 80px; }
+.rf-page-head { margin-bottom: 20px; }
+.rf-page-head-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+.rf-eyebrow { text-transform: uppercase; letter-spacing: 0.08em; font-size: 0.7rem; color: var(--accent); font-weight: 700; margin: 0 0 4px; }
+h1 { font-size: 1.6rem; margin: 0; letter-spacing: -0.02em; }
+h2 { font-size: 1.1rem; margin: 0; }
+.rf-muted { color: var(--muted); }
+.rf-breadcrumb { font-size: 0.85rem; color: var(--muted); margin-bottom: 12px; font-family: "DM Mono", monospace; }
+.rf-empty { color: var(--muted); padding: 40px 0; text-align: center; }
+.rf-empty-state { text-align: center; padding: 48px 0; }
+.rf-empty-state-title { font-weight: 600; margin: 0; }
+.rf-empty-state-hint { color: var(--muted); margin: 4px 0 0; }
+
+/* ---------------------------------------------------------------- lists */
+.rf-categories, .rf-threads { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+
+.rf-category-link, .rf-thread-link {
+  display: flex; align-items: center; justify-content: space-between; gap: 16px;
+  padding: 16px 18px; background: var(--card); border: 1px solid var(--line); border-radius: var(--radius);
+}
+.rf-category-link:hover, .rf-thread-link:hover { border-color: var(--accent); text-decoration: none; }
+.rf-category-main h2 { margin-bottom: 2px; }
+.rf-category-main p { margin: 0; color: var(--muted); font-size: 0.9rem; }
+.rf-count { text-align: center; font-weight: 700; font-size: 1.2rem; min-width: 56px; }
+.rf-count small { display: block; font-weight: 400; font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
+
+.rf-thread-main { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.rf-thread-title { font-weight: 600; display: flex; align-items: center; gap: 6px; }
+.rf-thread-meta { font-size: 0.82rem; color: var(--muted); display: flex; align-items: center; gap: 6px; }
+.rf-replies { font-size: 0.78rem; color: var(--muted); white-space: nowrap; font-family: "DM Mono", monospace; }
+.rf-dot { opacity: 0.5; }
+
+/* ---------------------------------------------------------------- user badge */
+.rf-user, .rf-thread-author, .rf-post-author { display: inline-flex; align-items: center; gap: 6px; font-weight: 500; }
+.rf-avatar {
+  width: 20px; height: 20px; border-radius: 50%; background: var(--accent-soft); color: var(--accent);
+  display: inline-flex; align-items: center; justify-content: center; font-size: 0.6rem; font-weight: 700; overflow: hidden;
+}
+.rf-avatar img { width: 100%; height: 100%; object-fit: cover; }
+
+/* ---------------------------------------------------------------- posts */
+.rf-posts { display: flex; flex-direction: column; gap: 12px; margin: 20px 0; }
+.rf-post { display: flex; gap: 14px; padding: 16px 18px; background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); }
+.rf-post-opening { border-color: var(--accent); background: #fffdf9; }
+.rf-post-deleted { opacity: 0.6; font-style: italic; }
+.rf-post-body-wrap { flex: 1; min-width: 0; }
+.rf-post-head { display: flex; align-items: center; gap: 10px; font-size: 0.82rem; margin-bottom: 6px; }
+.rf-post-body { margin: 0; white-space: pre-wrap; word-break: break-word; }
+.rf-post-actions { margin-top: 8px; display: flex; gap: 12px; }
+
+.rf-vote { display: flex; flex-direction: column; align-items: center; gap: 2px; width: 34px; }
+.rf-vote-btn { border: 1px solid var(--line); background: var(--paper); border-radius: 8px; width: 30px; height: 26px; cursor: pointer; color: var(--muted); line-height: 1; }
+.rf-vote-btn.is-voted, .rf-vote-btn:hover { color: var(--accent); border-color: var(--accent); }
+.rf-score { font-weight: 700; font-size: 0.9rem; }
+
+/* ---------------------------------------------------------------- forms */
+.rf-btn {
+  background: var(--accent); color: #fff; border: 1px solid var(--accent); border-radius: 8px;
+  padding: 8px 14px; font: inherit; font-weight: 600; cursor: pointer;
+}
+.rf-btn:hover { filter: brightness(1.05); }
+.rf-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.rf-btn-ghost { background: transparent; color: var(--ink); border-color: var(--line); }
+.rf-link-btn { background: none; border: none; color: var(--accent); cursor: pointer; font: inherit; font-size: 0.82rem; padding: 0; }
+.rf-link-btn:hover { text-decoration: underline; }
+.rf-more { margin-top: 16px; }
+
+.rf-input, textarea {
+  width: 100%; font: inherit; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px;
+  background: var(--card); color: var(--ink); resize: vertical;
+}
+.rf-input:focus, textarea:focus { outline: 2px solid var(--accent-soft); border-color: var(--accent); }
+
+.rf-composer, .rf-new-thread, .rf-editor { display: flex; flex-direction: column; gap: 8px; margin-top: 16px; }
+.rf-new-thread { padding: 16px; background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); }
+.rf-composer-actions, .rf-editor-actions { display: flex; gap: 8px; }
+.rf-locked-note { color: var(--muted); margin-top: 16px; }
+
+/* ---------------------------------------------------------------- toaster */
+.rf-toaster { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); display: flex; flex-direction: column; gap: 8px; z-index: 50; }
+.rf-toast { background: #2a1208; color: #fff; padding: 10px 16px; border-radius: 8px; font-size: 0.88rem; box-shadow: 0 6px 20px rgba(0,0,0,0.18); }

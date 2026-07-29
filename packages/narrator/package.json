@@ -1,0 +1,39 @@
+{
+  "name": "@rindle/narrator",
+  "version": "0.0.0",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/rindle-sh/rindle.git",
+    "directory": "packages/narrator"
+  },
+  "type": "module",
+  "description": "Turn a Rindle view's netted flat-change stream into agent-ready prose: resolve each FlatChange to named rows (via @rindle/client), render per-query templates (root + nested relationships) into salience-tagged SemanticEvents, and digest a batch into a ranked block for an agent prompt.",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "@rindle/source": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "src",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "test": "tsc --noEmit && node --conditions=@rindle/source --test test/*.test.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@rindle/client": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "typescript": "^5.7.0"
+  }
+}

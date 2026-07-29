@@ -1,0 +1,14 @@
+.rindled-v2/
+rindle.db*
+# the ONE topology's supervised fleet (`rindle up` reads rindle.ncl): renders + seglog under
+# .rindle/, the master/follower SQLite files, and the manifest `rindle up` writes at the app root
+.rindle/
+master.db*
+follower-*.db*
+rindle.json
+dist/
+.dev.vars
+.wrangler/
+.tanstack
+.nitro
+.output

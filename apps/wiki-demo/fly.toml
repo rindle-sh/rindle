@@ -1,0 +1,64 @@
+# Fly config for the wiki-demo server tier — the ONE topology (design 214) colocated pair
+# (rindle-replicator write-master + rindled read-follower, both on loopback) + the Node ingester +
+# api-server, one always-on machine + a volume. Deploy from the repo root so the Docker build
+# context is the repo:
+#
+#   fly deploy --config apps/wiki-demo/fly.toml
+#
+# One-time setup is in apps/wiki-demo/DEPLOY.md (app + volume create). The public hostname
+# (rindle-wiki-demo.fly.dev) is what product-page/wrangler.jsonc `WIKI_ORIGIN` points at; the
+# Cloudflare Worker reverse-proxies rindle.sh/demo/wiki/* to it.
+
+app = "rindle-wiki-demo"
+primary_region = "iad"
+
+[build]
+  # flyctl resolves this relative to THIS config file's directory (apps/wiki-demo/), NOT the build
+  # context — so it's just "Dockerfile". The build context stays the repo root (your cwd when you run
+  # `fly deploy` from there), which is what the Dockerfile's COPY paths + .dockerignore assume.
+  dockerfile = "Dockerfile"
+
+[env]
+  WIKI_DATA_DIR = "/data"
+  WIKI_SOURCE = "wikimedia"
+  WIKI_NWORKERS = "3"
+  WIKI_WINDOW_MIN = "180"
+  WIKI_DOMAIN = "en.wikipedia.org"
+  WIKI_API_PORT = "7700"
+  # Turns on rindled's read-only Prometheus plane. `[::]` lets Fly's metrics agent scrape it over
+  # the private IPv6 6PN; the `[[metrics]]` block below points the agent at it. Read-only +
+  # unauthenticated by design.
+  RINDLE_METRICS_ADDR = "[::]:9091"
+
+# Fly's managed Prometheus scrapes this every ~15s over 6PN (no public exposure). rindled serves
+# the engine gauges (materializations/leases/connections/subscriptions) + build SHA here.
+[[metrics]]
+  port = 9091
+  path = "/metrics"
+
+# The wal2 SQLite db + the persisted stream offset. Single-host NVMe; grows online, never shrinks.
+[[mounts]]
+  source = "wiki_data"
+  destination = "/data"
+
+# The Node tier is the only exposed port (lease/metrics HTTP + the /ws reverse proxy). TLS
+# terminates at Fly's edge; the pair stays private on localhost — the follower's control plane (7600)
+# + public ws (7601) and the master's fan-out ws (7610) + write ingress (7611). Always-on: this holds
+# the data + in-memory IVM and is the live write/subscribe origin — never scale to zero.
+[http_service]
+  internal_port = 7700
+  force_https = true
+  auto_stop_machines = false
+  auto_start_machines = false
+  min_machines_running = 1
+
+  [[http_service.checks]]
+    interval = "15s"
+    timeout = "5s"
+    grace_period = "20s"
+    method = "GET"
+    path = "/metrics"
+
+[[vm]]
+  size = "shared-cpu-2x"
+  memory = "1gb"

@@ -1,0 +1,42 @@
+{
+  "name": "@rindle/todo-mvc",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "A small TanStack Start TODO MVC app that demonstrates Rindle fragment-local reads.",
+  "scripts": {
+    "rindle": "RINDLE_BIN_DIR=${RINDLE_BIN_DIR:-../../rust/target/debug} node --conditions=@rindle/source ../../packages/cli/src/cli.ts",
+    "build:runtime": "cargo build --manifest-path ../../rust/Cargo.toml --bins -p rindle-cli -p rindle-server -p rindle-replicator -p rindle-dev-edge && pnpm --filter @rindle/wasm run build:wasm",
+    "dev": "pnpm build:runtime && pnpm rindle dev --migrate --gen shared/schema.gen.ts -- vite dev",
+    "generate-routes": "tsr generate",
+    "build": "vite build",
+    "typecheck": "tsr generate && tsc --noEmit",
+    "test": "tsr generate && tsc --noEmit && vite build"
+  },
+  "dependencies": {
+    "@rindle/api-server": "workspace:*",
+    "@rindle/client": "workspace:*",
+    "@rindle/optimistic": "workspace:*",
+    "@rindle/react": "workspace:*",
+    "@rindle/remote": "workspace:*",
+    "@rindle/wasm": "workspace:*",
+    "@tanstack/react-router": "latest",
+    "@tanstack/react-start": "latest",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@rindle/cli": "workspace:*",
+    "@rindle/devtools": "workspace:*",
+    "@rindle/react-devtools": "workspace:*",
+    "@tanstack/router-cli": "^1.167.17",
+    "@tanstack/router-plugin": "^1.168.18",
+    "@types/node": "^22.10.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "@vitejs/plugin-react": "^6.0.1",
+    "typescript": "^5.7.0",
+    "vite": "^8.0.0"
+  }
+}

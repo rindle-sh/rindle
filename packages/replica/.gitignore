@@ -1,0 +1,6 @@
+# napi-rs build outputs (the native addon + generated JS loader/types)
+*.node
+index.js
+index.d.ts
+node_modules/
+dist/

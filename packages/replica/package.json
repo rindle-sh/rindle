@@ -1,0 +1,48 @@
+{
+  "name": "@rindle/replica",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Native (napi-rs) Node backend for @rindle/client: the SQLite-backed rindle-replica live-query engine, in-process.",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "@rindle/source": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "src",
+    "index.js",
+    "index.d.ts",
+    "*.node",
+    "Cargo.toml",
+    "build.rs",
+    "README.md"
+  ],
+  "napi": {
+    "binaryName": "rindle-replica-node",
+    "targets": [
+      "x86_64-unknown-linux-gnu"
+    ]
+  },
+  "scripts": {
+    "build:native": "napi build --platform --release --esm",
+    "build:native:debug": "napi build --platform --esm",
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit",
+    "test": "node --conditions=@rindle/source test/e2e.mjs && node --conditions=@rindle/source test/strict-i64.e2e.mjs && node --conditions=@rindle/source test/int64-gate.e2e.mjs"
+  },
+  "dependencies": {
+    "@rindle/client": "workspace:*"
+  },
+  "devDependencies": {
+    "@napi-rs/cli": "^3.7.0",
+    "@types/node": "^22.10.0",
+    "@rindle/wasm": "workspace:*",
+    "typescript": "^5.7.0"
+  }
+}

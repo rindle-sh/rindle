@@ -1,0 +1,82 @@
+{
+  "name": "three_exists_and_flip",
+  "ast": {
+    "table": "users",
+    "where": {
+      "type": "and",
+      "conditions": [
+        {
+          "type": "correlatedSubquery",
+          "op": "EXISTS",
+          "related": {
+            "correlation": {
+              "parentField": [
+                "id"
+              ],
+              "childField": [
+                "userId"
+              ]
+            },
+            "subquery": {
+              "table": "posts",
+              "alias": "posts"
+            }
+          }
+        },
+        {
+          "type": "correlatedSubquery",
+          "op": "EXISTS",
+          "related": {
+            "correlation": {
+              "parentField": [
+                "id"
+              ],
+              "childField": [
+                "userId"
+              ]
+            },
+            "subquery": {
+              "table": "comments",
+              "alias": "comments"
+            }
+          }
+        },
+        {
+          "type": "correlatedSubquery",
+          "op": "EXISTS",
+          "related": {
+            "correlation": {
+              "parentField": [
+                "id"
+              ],
+              "childField": [
+                "userId"
+              ]
+            },
+            "subquery": {
+              "table": "likes",
+              "alias": "likes"
+            }
+          }
+        }
+      ]
+    }
+  },
+  "costModel": {
+    "kind": "perTable",
+    "rows": {
+      "users": 1000,
+      "comments": 9000
+    },
+    "startup": {
+      "posts": 50,
+      "likes": 50
+    },
+    "defaultRows": 1
+  },
+  "flips": [
+    true,
+    false,
+    true
+  ]
+}

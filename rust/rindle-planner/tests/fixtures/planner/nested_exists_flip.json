@@ -1,0 +1,59 @@
+{
+  "name": "nested_exists_flip",
+  "ast": {
+    "table": "users",
+    "where": {
+      "type": "correlatedSubquery",
+      "op": "EXISTS",
+      "related": {
+        "correlation": {
+          "parentField": [
+            "id"
+          ],
+          "childField": [
+            "userId"
+          ]
+        },
+        "subquery": {
+          "table": "posts",
+          "alias": "posts",
+          "where": {
+            "type": "correlatedSubquery",
+            "op": "EXISTS",
+            "related": {
+              "correlation": {
+                "parentField": [
+                  "id"
+                ],
+                "childField": [
+                  "userId"
+                ]
+              },
+              "subquery": {
+                "table": "comments",
+                "alias": "comments"
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "costModel": {
+    "kind": "perTable",
+    "rows": {
+      "users": 1000
+    },
+    "startup": {
+      "posts": 50,
+      "comments": 50,
+      "likes": 50,
+      "labels": 50
+    },
+    "defaultRows": 1
+  },
+  "flips": [
+    false,
+    true
+  ]
+}

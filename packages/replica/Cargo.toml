@@ -1,0 +1,27 @@
+# The `@rindle/replica` native addon: rindle-replica (SQLite-backed live-query engine) exposed
+# to Node via napi-rs. A workspace member (inherits the vendored-SQLite `[patch]`), but not
+# a default member — built via `napi build` / `cargo build -p rindle-replica-node`.
+[package]
+name = "rindle-replica-node"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[lib]
+# `cdylib` is the Node addon; `rlib` lets `cargo test -p rindle-replica-node` build the
+# pure-Rust `replica_core` unit tests (a cdylib-only crate has nothing to link tests against).
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+# `serde-json` lets `#[napi]` fns take/return `serde_json::Value` (we build the bare,
+# camelCase JS-shaped flat-change / wire-schema trees as `Value` and hand them straight back).
+napi = { version = "3", default-features = false, features = ["napi8", "serde-json"] }
+napi-derive = "3"
+serde_json = "1"
+# The SQLite-backed live-query engine + the core IVM crate (flatten/wire-schema/Receiver).
+# Both inherit the workspace-root vendored-SQLite `[patch.crates-io]` (this crate is a member).
+rindle = { path = ".." }
+rindle-replica = { path = "../rindle-replica" }
+
+[build-dependencies]
+napi-build = "2"

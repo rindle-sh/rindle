@@ -1,0 +1,25 @@
+# Public Rindle JS workspace — the @rindle/* libraries and the demo apps (one lockfile at the
+# repo root).
+#
+# This repository is a one-way, generated mirror of the upstream Rindle monorepo, produced by
+# Copybara. Do not edit here; edit upstream. Note that @rindle/replica's napi crate lives at
+# rust/rindle-replica-node upstream (a Cargo member must sit below the Cargo workspace root)
+# and is mapped into packages/replica by the sync, matching its published npm layout — so
+# `packages/*` below picks it up without a separate entry.
+#
+# The lockfile is intentionally NOT mirrored — upstream's pins members that do not exist here.
+# Run `pnpm install` once to generate one that matches this package set, then commit it; the
+# sync is configured to leave it alone from then on.
+packages:
+  - "packages/*"
+  - "packages/reference/*"
+  - "apps/*"
+
+# Build scripts allowed to run on install (pnpm 10+ records this here, not in package.json):
+#   esbuild/lightningcss — vite bundling in the demo apps
+#   workerd              — the Cloudflare runtime binary (@cloudflare/vite-plugin), for the two
+#                          apps that deploy as Workers
+allowBuilds:
+  esbuild: true
+  lightningcss: true
+  workerd: true

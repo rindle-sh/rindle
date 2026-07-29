@@ -1,0 +1,41 @@
+{
+  "name": "rindle",
+  "owner": {
+    "name": "Rindle",
+    "url": "https://rindle.sh"
+  },
+  "description": "Official Rindle plugin for Claude Code",
+  "plugins": [
+    {
+      "name": "rindle",
+      "source": "./claude-plugin",
+      "description": "Build local-first synced apps on Rindle — live queries, optimistic writes, isomorphic mutators.",
+      "keywords": [
+        "rindle",
+        "local-first",
+        "sync",
+        "live-queries",
+        "database"
+      ],
+      "relevance": {
+        "signals": {
+          "manifestDeps": [
+            {
+              "file": "package.json",
+              "pattern": "@rindle/"
+            }
+          ],
+          "filesRead": [
+            "daemon.json",
+            "**/schema.gen.ts",
+            "**/*.queries.ts"
+          ],
+          "cli": [
+            "rindle",
+            "rindled"
+          ]
+        }
+      }
+    }
+  ]
+}

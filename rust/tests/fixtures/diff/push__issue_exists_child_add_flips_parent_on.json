@@ -1,0 +1,134 @@
+{
+  "kind": "push",
+  "input": {
+    "sources": {
+      "issue": {
+        "columns": {
+          "id": {
+            "type": "number"
+          },
+          "val": {
+            "type": "number"
+          }
+        },
+        "primaryKeys": [
+          "id"
+        ]
+      },
+      "comment": {
+        "columns": {
+          "id": {
+            "type": "number"
+          },
+          "issue": {
+            "type": "number"
+          },
+          "val": {
+            "type": "number"
+          }
+        },
+        "primaryKeys": [
+          "id"
+        ]
+      }
+    },
+    "sourceContents": {
+      "issue": [
+        {
+          "id": 1,
+          "val": 100
+        },
+        {
+          "id": 2,
+          "val": 200
+        }
+      ],
+      "comment": [
+        {
+          "id": 10,
+          "issue": 1,
+          "val": 500
+        }
+      ]
+    },
+    "ast": {
+      "table": "issue",
+      "where": {
+        "type": "correlatedSubquery",
+        "op": "EXISTS",
+        "related": {
+          "correlation": {
+            "parentField": [
+              "id"
+            ],
+            "childField": [
+              "issue"
+            ]
+          },
+          "subquery": {
+            "table": "comment",
+            "alias": "matchingComments"
+          }
+        }
+      },
+      "orderBy": [
+        [
+          "id",
+          "asc"
+        ]
+      ]
+    },
+    "format": {
+      "singular": false,
+      "relationships": {}
+    },
+    "pushes": [
+      [
+        "comment",
+        {
+          "type": "add",
+          "row": {
+            "id": 20,
+            "issue": 2,
+            "val": 800
+          }
+        }
+      ]
+    ]
+  },
+  "expected": {
+    "data": [
+      {
+        "id": 1,
+        "val": 100
+      },
+      {
+        "id": 2,
+        "val": 200
+      }
+    ],
+    "pushes": [
+      {
+        "type": "add",
+        "node": {
+          "row": {
+            "id": 2,
+            "val": 200
+          },
+          "relationships": {
+            "matchingComments": [
+              {
+                "row": {
+                  "id": 20,
+                  "issue": 2,
+                  "val": 800
+                },
+                "relationships": {}
+              }
+            ]
+          }
+        }
+      }
+    ]
+  }
+}

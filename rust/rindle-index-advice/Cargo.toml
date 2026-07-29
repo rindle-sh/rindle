@@ -1,0 +1,25 @@
+[package]
+name = "rindle-index-advice"
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+repository = "https://github.com/rindle-sh/rindle"
+description = "Index-need derivation for the SQLite `TableSource` leaf: from a query's typed AST, derive the indexes it needs (docs/INDEXING.md R1–R4). The shared core behind `rindle indices suggest` (the CLI) and the daemon's index-coverage advisories (designs/INDEX-COVERAGE-ADVISORY-DESIGN.md), so both compute the identical need set. A SQLite-leaf concern, so it lives OUT of the backend-agnostic `rindle` engine crate — but it is pure AST-walking with no SQLite/C-toolchain dependency, which keeps it out of the SQLite-linking crates too (the CLI derives offline over HTTP and must not pull `rusqlite`)."
+# Kept private until the surface stabilizes (mirrors the `rindle` crate).
+publish = false
+
+# Pure, std-only AST-walking: the ONLY dependency is the engine's typed AST. No SQLite, no
+# C-toolchain, no I/O — so both the SQLite-free CLI and the SQLite-linking daemon can share it
+# without either paying for the other's dependencies. (Trivially wasm-clean, but not shipped to
+# wasm: the browser's `MemorySource` self-indexes, so index advice never runs there.)
+[dependencies]
+# The core engine — for the typed `Ast` the derivation walks. No `serde` feature needed: this
+# crate operates on already-parsed ASTs; the serde-deserialized shapes document lives in the CLI.
+rindle = { path = ".." }
+
+[dev-dependencies]
+# Tests build `Ast` values from wire JSON — the same pattern as the CLI's oracle test. serde is a
+# TEST-ONLY dependency (features unify onto the `rindle` above for test builds only); the shipped
+# crate stays serde-free.
+serde_json = "1"
+rindle = { path = "..", features = ["serde"] }

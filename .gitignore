@@ -1,0 +1,36 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# TypeScript build output (tsc -> dist/)
+/packages/**/dist/
+/apps/**/dist/
+
+# @rindle/wasm: wasm-bindgen artifacts (built from rust/ via packages/wasm/build.sh)
+/packages/**/pkg/
+
+# @rindle/replica: napi-rs native addon + generated JS loader/types. The addon's engine
+# (rindle-replica) is not part of this repository — see the README.
+/packages/**/*.node
+/packages/replica/index.js
+/packages/replica/index.d.ts
+
+# Cargo build output (the Cargo workspace lives under rust/)
+/rust/target/
+# rustfmt backups
+**/*.rs.bk
+
+# Local databases from running the demos / the SQLite tests
+*.db
+*.db-shm
+*.db-wal
+*.db-wal2
+.rindled/
+
+# Cloudflare wrangler local state (the demo apps)
+.wrangler/
+
+# Editor / OS cruft
+*.swp
+*.swo
+.DS_Store

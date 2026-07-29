@@ -1,0 +1,183 @@
+{
+  "kind": "push",
+  "input": {
+    "sources": {
+      "issue": {
+        "columns": {
+          "id": {
+            "type": "number"
+          },
+          "val": {
+            "type": "number"
+          }
+        },
+        "primaryKeys": [
+          "id"
+        ]
+      },
+      "comment": {
+        "columns": {
+          "id": {
+            "type": "number"
+          },
+          "issue": {
+            "type": "number"
+          },
+          "val": {
+            "type": "number"
+          }
+        },
+        "primaryKeys": [
+          "id"
+        ]
+      }
+    },
+    "sourceContents": {
+      "issue": [
+        {
+          "id": 1,
+          "val": 100
+        }
+      ],
+      "comment": [
+        {
+          "id": 10,
+          "issue": 1,
+          "val": 100
+        },
+        {
+          "id": 11,
+          "issue": 1,
+          "val": 200
+        },
+        {
+          "id": 12,
+          "issue": 1,
+          "val": 50
+        }
+      ]
+    },
+    "ast": {
+      "table": "issue",
+      "orderBy": [
+        [
+          "id",
+          "asc"
+        ]
+      ],
+      "related": [
+        {
+          "correlation": {
+            "parentField": [
+              "id"
+            ],
+            "childField": [
+              "issue"
+            ]
+          },
+          "subquery": {
+            "table": "comment",
+            "alias": "comments",
+            "orderBy": [
+              [
+                "val",
+                "desc"
+              ],
+              [
+                "id",
+                "asc"
+              ]
+            ],
+            "limit": 2
+          }
+        }
+      ]
+    },
+    "format": {
+      "singular": false,
+      "relationships": {
+        "comments": {
+          "singular": false,
+          "relationships": {}
+        }
+      }
+    },
+    "pushes": [
+      [
+        "comment",
+        {
+          "type": "add",
+          "row": {
+            "id": 13,
+            "issue": 1,
+            "val": 250
+          }
+        }
+      ]
+    ]
+  },
+  "expected": {
+    "data": [
+      {
+        "id": 1,
+        "val": 100,
+        "comments": [
+          {
+            "id": 13,
+            "issue": 1,
+            "val": 250
+          },
+          {
+            "id": 11,
+            "issue": 1,
+            "val": 200
+          }
+        ]
+      }
+    ],
+    "pushes": [
+      {
+        "type": "child",
+        "row": {
+          "id": 1,
+          "val": 100
+        },
+        "child": {
+          "relationshipName": "comments",
+          "change": {
+            "type": "remove",
+            "node": {
+              "row": {
+                "id": 10,
+                "issue": 1,
+                "val": 100
+              },
+              "relationships": {}
+            }
+          }
+        }
+      },
+      {
+        "type": "child",
+        "row": {
+          "id": 1,
+          "val": 100
+        },
+        "child": {
+          "relationshipName": "comments",
+          "change": {
+            "type": "add",
+            "node": {
+              "row": {
+                "id": 13,
+                "issue": 1,
+                "val": 250
+              },
+              "relationships": {}
+            }
+          }
+        }
+      }
+    ]
+  }
+}

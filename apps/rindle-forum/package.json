@@ -1,0 +1,49 @@
+{
+  "name": "@rindle/example-forum",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "A standalone, open-sourceable forum built on Rindle \u2014 the second flagship example. Browser wasm IVM + serverless-shaped API authority + always-up rindled daemon, with identity behind a pluggable AuthProvider seam (OIDC against Rindle Cloud in production).",
+  "scripts": {
+    "dev": "node server/dev.ts",
+    "dev:oidc": "node server/dev.ts --oidc",
+    "migrate": "node --conditions=@rindle/source server/migrate.ts",
+    "migrate:deploy": "node --conditions=@rindle/source server/migrate.ts --deploy",
+    "generate-routes": "tsr generate",
+    "build": "vite build",
+    "build:cf": "CF=1 vite build",
+    "preview:cf": "CF=1 vite build && wrangler dev -c dist/server/wrangler.json",
+    "typecheck": "tsr generate && tsc --noEmit",
+    "test": "node --conditions=@rindle/source --test test/*.test.ts && vite build"
+  },
+  "dependencies": {
+    "@rindle/api-server": "workspace:*",
+    "@rindle/client": "workspace:*",
+    "@rindle/daemon-client": "workspace:*",
+    "@rindle/optimistic": "workspace:*",
+    "@rindle/react": "workspace:*",
+    "@rindle/remote": "workspace:*",
+    "@rindle/server": "workspace:*",
+    "@rindle/sql-client": "workspace:*",
+    "@rindle/wasm": "workspace:*",
+    "@tanstack/react-router": "latest",
+    "@tanstack/react-router-devtools": "latest",
+    "@tanstack/react-start": "latest",
+    "jose": "^6.2.3",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@cloudflare/vite-plugin": "^1.41.0",
+    "@tanstack/router-cli": "^1.167.17",
+    "@tanstack/router-plugin": "^1.168.18",
+    "@types/node": "^22.10.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "@vitejs/plugin-react": "^6.0.1",
+    "typescript": "^5.7.0",
+    "vite": "^8.0.0",
+    "wrangler": "^4.101.0"
+  }
+}

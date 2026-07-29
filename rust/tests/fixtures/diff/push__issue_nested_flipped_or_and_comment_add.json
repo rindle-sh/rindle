@@ -1,0 +1,205 @@
+{
+  "kind": "push",
+  "input": {
+    "sources": {
+      "issue": {
+        "columns": {
+          "id": {
+            "type": "number"
+          },
+          "score": {
+            "type": "number"
+          }
+        },
+        "primaryKeys": [
+          "id"
+        ]
+      },
+      "comment": {
+        "columns": {
+          "id": {
+            "type": "number"
+          },
+          "issue": {
+            "type": "number"
+          }
+        },
+        "primaryKeys": [
+          "id"
+        ]
+      },
+      "label": {
+        "columns": {
+          "id": {
+            "type": "number"
+          },
+          "issue": {
+            "type": "number"
+          }
+        },
+        "primaryKeys": [
+          "id"
+        ]
+      }
+    },
+    "sourceContents": {
+      "issue": [
+        {
+          "id": 1,
+          "score": 200
+        },
+        {
+          "id": 2,
+          "score": 300
+        },
+        {
+          "id": 3,
+          "score": 100
+        },
+        {
+          "id": 5,
+          "score": 400
+        }
+      ],
+      "comment": [
+        {
+          "id": 10,
+          "issue": 1
+        },
+        {
+          "id": 12,
+          "issue": 3
+        }
+      ],
+      "label": [
+        {
+          "id": 20,
+          "issue": 2
+        }
+      ]
+    },
+    "ast": {
+      "table": "issue",
+      "where": {
+        "type": "and",
+        "conditions": [
+          {
+            "type": "or",
+            "conditions": [
+              {
+                "type": "correlatedSubquery",
+                "op": "EXISTS",
+                "related": {
+                  "correlation": {
+                    "parentField": [
+                      "id"
+                    ],
+                    "childField": [
+                      "issue"
+                    ]
+                  },
+                  "subquery": {
+                    "table": "comment",
+                    "alias": "comments"
+                  }
+                },
+                "flip": true
+              },
+              {
+                "type": "correlatedSubquery",
+                "op": "EXISTS",
+                "related": {
+                  "correlation": {
+                    "parentField": [
+                      "id"
+                    ],
+                    "childField": [
+                      "issue"
+                    ]
+                  },
+                  "subquery": {
+                    "table": "label",
+                    "alias": "labels"
+                  }
+                }
+              }
+            ]
+          },
+          {
+            "type": "simple",
+            "op": ">=",
+            "left": {
+              "type": "column",
+              "name": "score"
+            },
+            "right": {
+              "type": "literal",
+              "value": 200
+            }
+          }
+        ]
+      },
+      "orderBy": [
+        [
+          "id",
+          "asc"
+        ]
+      ]
+    },
+    "format": {
+      "singular": false,
+      "relationships": {}
+    },
+    "pushes": [
+      [
+        "comment",
+        {
+          "type": "add",
+          "row": {
+            "id": 50,
+            "issue": 5
+          }
+        }
+      ]
+    ]
+  },
+  "expected": {
+    "data": [
+      {
+        "id": 1,
+        "score": 200
+      },
+      {
+        "id": 2,
+        "score": 300
+      },
+      {
+        "id": 5,
+        "score": 400
+      }
+    ],
+    "pushes": [
+      {
+        "type": "add",
+        "node": {
+          "row": {
+            "id": 5,
+            "score": 400
+          },
+          "relationships": {
+            "labels_1": [],
+            "comments_0": [
+              {
+                "row": {
+                  "id": 50,
+                  "issue": 5
+                },
+                "relationships": {}
+              }
+            ]
+          }
+        }
+      }
+    ]
+  }
+}

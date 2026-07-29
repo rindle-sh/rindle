@@ -1,0 +1,163 @@
+{
+  "kind": "fetch",
+  "input": {
+    "sources": {
+      "issue": {
+        "columns": {
+          "id": {
+            "type": "number"
+          },
+          "val": {
+            "type": "number"
+          }
+        },
+        "primaryKeys": [
+          "id"
+        ]
+      },
+      "comment": {
+        "columns": {
+          "id": {
+            "type": "number"
+          },
+          "issue": {
+            "type": "number"
+          },
+          "val": {
+            "type": "number"
+          }
+        },
+        "primaryKeys": [
+          "id"
+        ]
+      },
+      "reaction": {
+        "columns": {
+          "id": {
+            "type": "number"
+          },
+          "comment": {
+            "type": "number"
+          },
+          "val": {
+            "type": "number"
+          }
+        },
+        "primaryKeys": [
+          "id"
+        ]
+      }
+    },
+    "sourceContents": {
+      "issue": [
+        {
+          "id": 1,
+          "val": 100
+        }
+      ],
+      "comment": [
+        {
+          "id": 10,
+          "issue": 1,
+          "val": 500
+        }
+      ],
+      "reaction": [
+        {
+          "id": 90,
+          "comment": 10,
+          "val": 1
+        }
+      ]
+    },
+    "ast": {
+      "table": "issue",
+      "orderBy": [
+        [
+          "id",
+          "asc"
+        ]
+      ],
+      "related": [
+        {
+          "correlation": {
+            "parentField": [
+              "id"
+            ],
+            "childField": [
+              "issue"
+            ]
+          },
+          "subquery": {
+            "table": "comment",
+            "alias": "comments",
+            "orderBy": [
+              [
+                "id",
+                "asc"
+              ]
+            ],
+            "related": [
+              {
+                "correlation": {
+                  "parentField": [
+                    "id"
+                  ],
+                  "childField": [
+                    "comment"
+                  ]
+                },
+                "subquery": {
+                  "table": "reaction",
+                  "alias": "reactions",
+                  "orderBy": [
+                    [
+                      "id",
+                      "asc"
+                    ]
+                  ]
+                }
+              }
+            ]
+          }
+        }
+      ]
+    },
+    "format": {
+      "singular": false,
+      "relationships": {
+        "comments": {
+          "singular": false,
+          "relationships": {
+            "reactions": {
+              "singular": false,
+              "relationships": {}
+            }
+          }
+        }
+      }
+    }
+  },
+  "expected": {
+    "data": [
+      {
+        "id": 1,
+        "val": 100,
+        "comments": [
+          {
+            "id": 10,
+            "issue": 1,
+            "val": 500,
+            "reactions": [
+              {
+                "id": 90,
+                "comment": 10,
+                "val": 1
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -1,0 +1,63 @@
+# The SQLite backend for the `rindle` IVM engine, split out of the core crate so `rindle`
+# stays std-only / wasm-clean (no `rusqlite`, no C toolchain). This crate owns the
+# `TableSource` leaf, the FetchRequest→SQL lowering, the zero-copy row stream, the
+# prepared-statement cache, and the spill-to-SQLite operator storage. It links the
+# SAME vendored bedrock SQLite as the rest of the workspace via the root
+# `[patch.crates-io]` redirect (no `build.rs` of its own).
+[package]
+name = "rindle-sqlite"
+version = "0.1.0"
+edition = "2021"
+description = "SQLite backend for the rindle IVM engine: TableSource leaf, SQL lowering, zero-copy row stream, and spill-to-SQLite operator storage."
+license = "Apache-2.0"
+repository = "https://github.com/rindle-sh/rindle"
+publish = false
+
+[dependencies]
+rindle = { path = ".." }
+# The cost model implements the planner's `ConnectionCostModel` over real SQLite
+# statistics (scanstatus + stat4/stat1), so the planner can flip EXISTS joins based on
+# the actual database.
+rindle-planner = { path = "../rindle-planner" }
+# Identical to rindle-replica: the bundled C source is the in-repo vendored bedrock
+# amalgamation via the workspace `[patch.crates-io]` (wal2 + BEGIN CONCURRENT).
+rusqlite = { version = "0.32", features = ["bundled"] }
+# Opt-in tuned allocator for the benchmark examples (the Rust-vs-JS head-to-head),
+# mirroring `rindle`'s `fast-alloc`. Off by default.
+mimalloc = { version = "0.1", default-features = false, optional = true }
+# In-process CPU sampling profiler for the chinook bench's `--profile <pattern>` mode
+# (flamegraph SVGs). Off by default and only used by the `bench_chinook_rs` example;
+# chosen over `cargo flamegraph`/`perf`, which is impractical on WSL2 (no matching
+# linux-tools, perf_event_paranoid). `default-features = false` drops the `cpp`
+# C++-demangle feature (no C++ toolchain needed); `flamegraph` pulls `inferno`.
+pprof = { version = "0.15", default-features = false, features = ["flamegraph"], optional = true }
+
+[features]
+# Test-support: re-export the `rindle` testkit and add a SQLite `SourceBackend` so the
+# SQLite tests can replay the shared fixtures against real `TableSource` leaves.
+testkit = ["rindle/testkit"]
+# Tuned allocator for `examples/bench_*`; matches `rindle`'s feature of the same name.
+fast-alloc = ["dep:mimalloc"]
+# Enables the `bench_chinook_rs --profile <pattern>` flamegraph mode (pulls pprof).
+profile = ["dep:pprof"]
+# Opt-in (OFF by default): instrument `TableSource` with SQLite's own per-statement
+# work counters (`sqlite3_stmt_status`: VM steps / full-scan steps / sorts),
+# accumulated across every leaf `SELECT` into a shared `ScanStats` sink. Used only by
+# the `plan_quality` test to measure how much work SQLite does for a planned query vs
+# its unplanned variant. Compiles to NOTHING when off — no instrumentation ships in
+# production. The test also needs `testkit` (run with `--features scan-stats,testkit`).
+scan-stats = []
+
+[dev-dependencies]
+rindle = { path = "..", features = ["testkit"] }
+# The AST→single-SQLite-SELECT oracle compiler. Used by the
+# `bench_zero_throughput_relational_rs --sql-baseline` mode to measure the "re-run the
+# whole query as raw SQL on every write" alternative to IVM.
+rindle-d2s = { path = "../rindle-d2s" }
+# The `downstream_view` doc example folds deltas into JSON rows and compares them to a
+# fresh SELECT (the view-after-write == fresh-query proof).
+serde_json = "1"
+# The index-need derivation under test in `tests/index_advice_plan.rs`: the differential oracle
+# derives an index from a query AST, then EXPLAINs the engine's real fetch (`build_select_query`)
+# with/without it. A test-only dep — index-advice itself links no SQLite.
+rindle-index-advice = { path = "../rindle-index-advice" }

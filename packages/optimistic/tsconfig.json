@@ -1,0 +1,17 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "lib": ["ES2022"],
+    "strict": true,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "verbatimModuleSyntax": true,
+    "allowImportingTsExtensions": true,
+    // This package depends on @rindle/client; resolve it from source (build-free), like @rindle/remote.
+    "customConditions": ["@rindle/source"],
+    "types": ["node"]
+  },
+  "include": ["src", "test"]
+}

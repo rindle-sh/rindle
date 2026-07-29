@@ -1,0 +1,24 @@
+{
+  "name": "@rindle/wiki-demo",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "The tiny machine: a real rindled follower keeps three nested boards (most-active pages, just-edited pages, most-active editors) over Wikimedia's live recentchange firehose permanently pinned (warm with zero viewers) and fans the live results out to many browsers, which SHARE one materialization each. A thin Node tier (API server + ordered ingester) fronts the HCTree master/follower pair and resumes the stream from its offset on restart.",
+  "scripts": {
+    "build:daemon": "cargo build --manifest-path ../../rust/Cargo.toml -p rindle-server --bin rindled -p rindle-replicator --bin rindle-replicator",
+    "dev": "pnpm build:daemon && node --conditions=@rindle/source src/main.ts",
+    "dev:synthetic": "pnpm build:daemon && node --conditions=@rindle/source src/main.ts --source synthetic",
+    "typecheck": "tsc --noEmit",
+    "smoke": "pnpm build:daemon && node --conditions=@rindle/source test/smoke.e2e.ts"
+  },
+  "dependencies": {
+    "@rindle/api-server": "workspace:*",
+    "@rindle/client": "workspace:*",
+    "@rindle/daemon-client": "workspace:*"
+  },
+  "devDependencies": {
+    "@rindle/optimistic": "workspace:*",
+    "@types/node": "^22.10.0",
+    "typescript": "^5.7.0"
+  }
+}

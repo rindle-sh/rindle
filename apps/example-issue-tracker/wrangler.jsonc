@@ -1,0 +1,67 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "rindle-issue-tracker",
+  "account_id": "<your-cloudflare-account-id>",
+  "compatibility_date": "2026-05-28",
+
+  // worker.ts is the Cloudflare Worker entry: it installs Worker env bindings for the Start
+  // server.entry and adds the daily reset cron. Static assets (hashed JS/CSS) are served from
+  // Cloudflare's asset server first; pages (asset misses) fall through to the Worker for SSR. The
+  // browser talks to the configured data-plane edge directly (wss), never this Worker.
+  //
+  // BUILD: `CF=1 vite build` (via @cloudflare/vite-plugin, see vite.config.ts) bundles THIS `main`
+  // (worker.ts) for workerd in the `ssr` environment — so the Start SSR manifest is baked in and the
+  // worker runs on Workers (verified end-to-end on local workerd in test/ssr-workerd.e2e.ts). The
+  // plugin emits the built Worker to dist/server/ (+ a generated dist/server/wrangler.json) and the
+  // client bundle to dist/client/; deploy with `wrangler deploy -c dist/server/wrangler.json` so
+  // Wrangler uses that output. `main` stays the worker.ts SOURCE — the plugin, not raw
+  // wrangler/esbuild, builds it.
+  "main": "./worker.ts",
+
+  // `nodejs_compat`: the API libs are runtime-agnostic, but `server/{seed,reset}.ts` (shared with
+  // the Node entrypoints) read `process.env`/`process.argv` at module top — this provides `process`
+  // so they load cleanly. The Worker calls reset() with explicit args, so those env reads are unused.
+  "compatibility_flags": ["nodejs_compat"],
+
+  // issues.rindle.sh — a subdomain of the rindle.sh zone (same Cloudflare account), so `wrangler
+  // deploy` provisions the DNS record + TLS cert automatically. Same-origin keeps the SPA's
+  // `/api/rindle/*` calls CORS-free; the ws goes cross-origin to the data-plane edge.
+  "routes": [
+    { "pattern": "issues.rindle.sh", "custom_domain": true }
+  ],
+
+  // Headwaters exposes a single app hostname and routes both read and write paths. These loopback
+  // defaults are for local preview; pass the same app-<id>.rindle.cloud URL for both vars when
+  // publishing this demo, plus its DAEMON_TOKEN / WRITE_TOKEN Worker secrets.
+  // PUBLIC_ORIGIN — this deployment's own origin; retained for compatibility with older deploy
+  // configs and any future absolute-URL need. SSR reads are in-process, not self-origin fetches.
+  "vars": {
+    "DAEMON_ORIGIN": "http://127.0.0.1:7600",
+    "REPLICATOR_ORIGIN": "http://127.0.0.1:7611",
+    "PUBLIC_ORIGIN": "https://issues.rindle.sh"
+  },
+
+  // Shared-sandbox reset cadence: once a day at 00:00 UTC, snap back to the pristine 5k baseline via
+  // the write-master (and seed a fresh deployment on the first fire). Tune freely — more often =
+  // tidier, less = more collab.
+  "triggers": {
+    "crons": ["0 0 * * *"]
+  },
+
+  "assets": {
+    // TanStack Start's client build emits the hashed client bundle here (verified: `vite build` →
+    // dist/client/assets for hydration; no static index.html — the Worker server-renders pages).
+    "directory": "./dist/client",
+    "binding": "ASSETS",
+    // SSR (not SPA): asset MISSES are page routes — let them invoke the Worker to be server-rendered
+    // rather than falling back to a static shell. (Was "single-page-application" in SPA mode.)
+    "not_found_handling": "none",
+    // The API routes always hit the Worker (they'd otherwise be asset misses too — explicit is safer).
+    // Real static assets are served before the Worker; pages fall through to it for SSR.
+    "run_worker_first": ["/api/rindle/*"]
+  },
+
+  "observability": {
+    "enabled": true
+  }
+}

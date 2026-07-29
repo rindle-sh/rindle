@@ -1,0 +1,15 @@
+{
+  // Emit profile: compile `src/` → `dist/` (.js + .d.ts). The shebang in `src/cli.ts` is
+  // preserved by tsc, so `dist/cli.js` is directly runnable as the `rindled` bin.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "rootDir": "./src",
+    "outDir": "./dist",
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true,
+    "rewriteRelativeImportExtensions": true
+  },
+  "include": ["src"]
+}

@@ -1,0 +1,16 @@
+{
+  // Emit profile: compile `src/index.ts` to `dist/` as runnable ESM `.js` + `.d.ts`. The
+  // native binding (`../index.js`) is a real `.js` (left as-is in the output); `@rindle/client`
+  // is a bare specifier (unchanged) — neither is a relative `.ts`, so nothing to rewrite.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "rootDir": "./src",
+    "outDir": "./dist",
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true,
+    "rewriteRelativeImportExtensions": true
+  },
+  "include": ["src"]
+}

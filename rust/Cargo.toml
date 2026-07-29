@@ -1,0 +1,224 @@
+# This crate (`rindle`) is the workspace ROOT package: the std-only / wasm-clean core
+# IVM engine + AST, with NO `rusqlite`/C-toolchain dependency. The SQLite backend
+# lives in the `rindle-sqlite` member; `rindle-replica` (live-query wrapper) builds on both.
+# Keeping the workspace rooted here means the `[patch.crates-io]` redirect to the
+# vendored bedrock `libsqlite3-sys` (bottom of this file) and the `[profile.*]`
+# definitions apply to ALL members — every SQLite-linking crate links the SAME
+# patched SQLite, and they inherit the `release-server` (`panic = "unwind"`) profile
+# needed for `catch_unwind`.
+[workspace]
+members = ["rindle-sqlite", "rindle-planner", "rindle-d2s", "rindle-index-advice", "rindle-testfix"]
+# `explore-hctree` is deliberately NOT a member: it links the hctree SQLite fork built
+# from the sibling fossil checkout (`../hctree`, absent on CI), a different SQLite than
+# the vendored bedrock amalgamation every member links. Keeping it excluded keeps it out
+# of the `--workspace` lanes and out of the `[patch.crates-io]` link graph. Run it with
+# `cd explore-hctree && cargo test`.
+exclude = []
+# `rindle-replica-node` (the `@rindle/replica` napi-rs native addon) and `rindle-os-tui` (the native
+# TUI demo) live under this Cargo workspace root even though they are also a pnpm package / an app:
+# a Cargo workspace member MUST be hierarchically below the workspace root, so they cannot sit in the
+# repo-root `packages/` or `apps/` trees. `rindle-replica-node` is still a pnpm workspace member (it
+# has a `package.json`) — see `pnpm-workspace.yaml`, which lists it at `rust/rindle-replica-node`.
+# It is a member here so it inherits the vendored-SQLite `[patch.crates-io]` below (it depends on
+# `rindle-replica`). DO NOT add a `default-members` key: with a root package present, the bare
+# `cargo build/test/check` (no `-p`) already operates on the ROOT crate ALONE — the C-toolchain-free,
+# wasm-clean core that CI's `--target wasm32` lanes compile. Listing default-members would pull the
+# SQLite + `getrandom` (rindle-fuzz) members into those bare commands and break the wasm checks.
+# Build the SQLite-linking members (and this addon) explicitly via `-p` / `napi build`, as CI's
+# `-p` lanes already do.
+resolver = "2"
+
+# The 'dist' (cargo-dist) workspace-level config does NOT live here — it lives at the repo root in
+# `dist-workspace.toml` under `[dist]`. Because this Cargo workspace is under `rust/` (not the repo
+# root), that file makes the REPO ROOT the dist workspace root and points dist at this Cargo
+# workspace (`members = ["rindle-sqlite", "rindle-planner", "rindle-d2s", "rindle-index-advice", "rindle-testfix"]`); once a dist-workspace.toml exists, dist REQUIRES the
+# `[dist]` config there and errors if a `[workspace.metadata.dist]` block is also present here.
+# Per-binary `[package.metadata.dist] dist = true` markers still live in the member crates
+# (rindle-cli / rindle-server / rindle-replicator / rindle-dev-edge / rindle-poold — each also
+# listed in scripts/stamp-dist-crate-version.sh, or the release skips it). See `[profile.dist]` below
+# for the profile tie-in.
+
+[package]
+name = "rindle"
+version = "0.1.0"
+edition = "2021"
+description = "Incremental view maintenance (IVM) engine — a Rust port of Zero's ZQL query/dataflow engine, with a wasm/JS client."
+# Apache-2.0: this is a Rust port of Rocicorp's Zero (`rocicorp/mono`, Apache-2.0).
+# Attribution to the upstream is preserved in NOTICE (Apache-2.0 §4(d)).
+license = "Apache-2.0"
+repository = "https://github.com/rindle-sh/rindle"
+readme = "README.md"
+keywords = ["ivm", "incremental", "query", "dataflow", "zero"]
+categories = ["database", "caching", "data-structures", "wasm"]
+# MSRV/toolchain: pinned by `rust-toolchain.toml` and CI so rustfmt/clippy output
+# stays reproducible across local machines and GitHub Actions. The crate relies on
+# recent-stable features (let-else, `Option::is_some_and`); update the toolchain pin
+# deliberately when moving the supported compiler forward.
+# Kept private until the public API freezes (WS01.7). Flip to a registry when the
+# `0.1` surface is ratified.
+publish = false
+
+# This core crate is always the client/memory target: std-only/C-toolchain-free, no
+# `rusqlite`/`TableSource`. The native-server SQLite backend lives in the `rindle-sqlite`
+# member crate; client/wasm builds use this crate's default feature set as-is.
+
+[lib]
+name = "rindle"
+path = "src/lib.rs"
+# `rlib` keeps the crate usable as a normal Rust dependency and lets the test/example
+# targets link it. The wasm client artifact (WS01.6) needs `cdylib`, but ONLY on the
+# wasm32 target — so `packages/wasm/build.sh` requests it per-build via
+# `cargo rustc --crate-type cdylib` rather than listing it here. Keeping `cdylib` in the
+# default set made every NATIVE build also emit a hash-less `librindle.so`, which under
+# resolver-2 feature splitting (testkit vs not) collided on that filename and intermittently
+# raced a from-clean `--release` build (cargo#6313). `rlib`-only fixes that at the root.
+crate-type = ["rlib"]
+
+# Dev/test builds (the `cargo test`/`--all-targets` battery + all integration-test
+# binaries, which build under the `test` profile that INHERITS this one). Cargo's
+# default is `debug = 2` (full DWARF), which on this workspace makes each of the ~200
+# statically-linked test binaries carry tens of MB of debuginfo — codegen + link of
+# that debuginfo, not code, dominates the tail of the battery. `line-tables-only`
+# drops variable/type DWARF but KEEPS file:line in panic backtraces (so a failing
+# test still points at a line); measured ~2x faster on a cold `--tests` build. Bump
+# back to `debug = 2` locally if you need full lldb variable inspection.
+[profile.dev]
+debug = "line-tables-only"
+
+[profile.release]
+lto = true
+panic = "abort"
+
+# D2 (ratified): the native server build selects this profile
+# (`cargo build --profile release-server`) so a WS02.5 `catch_unwind`
+# per-mutation fault boundary is possible — one bad mutation must not abort a
+# process serving many connections. The default [profile.release] keeps
+# `panic = "abort"` for the smaller wasm client binary (no unwind tables; the
+# client trusts its own change producer).
+[profile.release-server]
+inherits = "release"
+panic = "unwind"
+
+# The size-optimized wasm CLIENT artifact (spec 00 §7.1, WS01.6). Built with
+# `cargo build --profile wasm-release --target wasm32-unknown-unknown
+# --no-default-features --features wasm`. Inherits release's `lto`/`panic="abort"`
+# and adds size knobs; kept separate so the native `release` build stays fast.
+[profile.wasm-release]
+inherits = "release"
+opt-level = "z"
+codegen-units = 1
+
+# Profiling build for `bench_chinook_rs --profile` (pprof flamegraphs). Optimized like
+# release for representative timings, but with debuginfo + frame pointers kept and LTO
+# OFF so the sampler resolves readable, un-collapsed engine frames. Build/run with:
+#   RUSTFLAGS="-C force-frame-pointers=yes" cargo run -p rindle-sqlite \
+#     --profile profiling --features "fast-alloc profile" --example bench_chinook_rs -- --profile <pattern>
+[profile.profiling]
+inherits = "release"
+lto = false
+debug = true
+strip = false
+
+# The profile that 'dist' will build with. Inherits `release-server` (NOT `release`)
+# so released `rindled` binaries keep `panic = "unwind"` for the per-mutation
+# `catch_unwind` fault boundary; `lto = "thin"` overrides the inherited full LTO to
+# keep release-build CI times reasonable.
+[profile.dist]
+inherits = "release-server"
+lto = "thin"
+
+[dependencies]
+mimalloc = { version = "0.1", default-features = false, optional = true }
+# NOTE: the SQLite backend (rusqlite + the vendored bedrock amalgamation) now lives
+# in the `rindle-sqlite` member crate; the core engine carries no `rusqlite`/C-toolchain
+# dependency. The `[patch.crates-io]` redirect at the bottom of this file is shared by
+# all SQLite-linking members (`rindle-sqlite`, `rindle-replica`).
+#
+# Wire (de)serialization for the AST (`src/ast.rs`) so JS-emitted query JSON can
+# drive the Rust pipeline builder. OPTIONAL + behind the dedicated `serde` feature
+# (`cfg_attr` derives). Productionization D1 graduates serde from testkit-only: the
+# wasm client deserializes JS-emitted AST JSON in the SHIPPING artifact, so serde
+# now ships (via `serde-wasm-bindgen`, no `serde_json` in the bundle). `testkit`
+# depends on the `serde` feature transitively, so the existing CI configs are
+# unchanged. (This deliberately overrides the spec 02 §1.2 "never in the shipping
+# artifact" rule for the wasm path; bundle cost is measured by twiggy in WS01.6.)
+serde = { version = "1", features = ["derive"], optional = true }
+# Feature-gated observability facade (WS03). Tracing has static level filtering and
+# does not allocate on a disabled span/event. OPTIONAL + behind the `observe`
+# feature so the default client build carries no `tracing` dependency at all;
+# `default-features = false` keeps it lean.
+tracing = { version = "0.1", optional = true, default-features = false, features = [
+    "std",
+    "attributes",
+] }
+# --- wasm/JS client boundary (WS01, ratified decision D1) ---
+# These compile ONLY under the `wasm` feature. `serde-wasm-bindgen` is the
+# JsValue<->serde bridge (no serde_json round-trip in the shipped bundle);
+# `console_error_panic_hook` makes a residual `panic = "abort"` surface a legible
+# JS error instead of an opaque `unreachable` (WS09.6).
+wasm-bindgen = { version = "0.2", optional = true }
+serde-wasm-bindgen = { version = "0.6", optional = true }
+js-sys = { version = "0.3", optional = true }
+console_error_panic_hook = { version = "0.1", optional = true }
+
+[dev-dependencies]
+# Drives the wire-AST round-trip / JS-JSON parse tests (gated `#[cfg(feature =
+# "testkit")]`). Dev-only — never in the shipping artifact.
+serde_json = "1"
+
+[features]
+default = ["memory"]
+memory = []
+# Opt-in tuned allocator for `examples/bench_rs.rs` (the Rust-vs-JS head-to-head).
+# Off by default so the core build/test stays std-only and C-toolchain-free.
+fast-alloc = ["dep:mimalloc"]
+# Serde (de)serialization for the AST, as its own feature (D1). It graduates from
+# being testkit-only so the wasm client can ship serde to deserialize JS-emitted
+# AST JSON. `testkit` and `wasm` both depend on it.
+serde = ["dep:serde"]
+# The wasm/JS client boundary (WS01). Composes with the default `memory` source.
+# Pulls serde into the SHIPPING artifact via `serde-wasm-bindgen` (D1). Build with
+# `cargo build --target wasm32-unknown-unknown --no-default-features --features wasm`.
+wasm = [
+    "memory",
+    "serde",
+    "dep:wasm-bindgen",
+    "dep:serde-wasm-bindgen",
+    "dep:js-sys",
+    "dep:console_error_panic_hook",
+]
+# Feature-gated tracing/metrics instrumentation (WS03). NOT in `default` — the
+# wasm client stays lean (verify with `cargo tree`). The server opts in. The only
+# place that touches `tracing` is the `src/observe.rs` shim, which expands its
+# macros to argument-consuming no-ops when this feature is off.
+observe = ["dep:tracing"]
+# Build-gated process metrics (`src/metrics.rs`): the instrumentation macros fold
+# seams into atomic counters on a process-global registry. No deps (std atomics
+# only); NOT in `default` so the wasm client / embedders that don't want the
+# counters link no global. The daemon opts in (rindle-server's `metrics` feature
+# enables this). Separate from `observe`: counters are atomics, not tracing events.
+metrics = []
+# The spec-11 test harness (`src/testkit.rs`). The lightweight oracle
+# (Catch/Snitch/fingerprint/runners) and the serde wire-AST boundary both live
+# behind this flag so production library builds do not export test helpers. It
+# depends on the `serde` feature (transitively pulling `dep:serde`), so the
+# property library (§5, proptest) and criterion benches (§6) join it later. Run
+# the full memory harness with `cargo test --features testkit`; run the SQLite
+# harness with `cargo test --no-default-features --features "sqlite testkit"`.
+testkit = ["serde"]
+
+# --- Hctree-bedrock SQLite (vendored transition fork) ---
+# Redirect the transitive `libsqlite3-sys` (pulled by rusqlite's `bundled`
+# feature) to the in-repo vendored fork. It is libsqlite3-sys 0.30.1 verbatim
+# EXCEPT `sqlite3/sqlite3.{c,h}` + `sqlite3ext.h`, which are a `bedrock`-branch
+# SQLite 3.54.0 amalgamation from `hctree-bedrock` (Hctree + wal2 + BEGIN
+# CONCURRENT, zero-sqlite3 define set), plus its additive `sqlite3hct.h` header.
+# The prebuilt FFI bindings (`bindgen_bundled_version.rs`, 3.46 ABI) are kept
+# as-is: stock APIs keep their ABI and the Hctree journal API is declared by a
+# narrow local FFI wrapper, so no `buildtime_bindgen`/libclang is required.
+# This applies workspace-wide and is the ONLY SQLite the crate links. Existing
+# daemon/follower files retain wal2; only an opted-in replicator creates Hctree.
+# See
+# `docs/SQLITE_WAL2.md`.
+[patch.crates-io]
+libsqlite3-sys = { path = "vendor/libsqlite3-sys" }

@@ -1,0 +1,18 @@
+{
+  // Typecheck profile. No DOM lib — the server uses the `ws` package types, not the global
+  // WebSocket. `customConditions` resolves the sibling @rindle/* packages from their TS source.
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "lib": ["ES2022"],
+    "strict": true,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "verbatimModuleSyntax": true,
+    "allowImportingTsExtensions": true,
+    "customConditions": ["@rindle/source"],
+    "types": ["node"]
+  },
+  "include": ["src"]
+}

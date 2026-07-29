@@ -1,0 +1,30 @@
+# `rindle-testfix` — shared test fixtures (chinook / mini) + the IVM↔SQLite
+# differential **parity harness**, graduated out of `rindle-d2s/tests/harness/` so it
+# is reusable by BOTH `rindle-d2s`'s own integration tests AND the `rindle-fuzz`
+# coverage-driven generator. A library (not a `tests/` module) is what lets a
+# second crate consume it; `rindle-d2s` depends on it as a dev-dependency (a cycle
+# permitted because it runs through a dev edge).
+#
+# It links the same vendored bedrock SQLite as the rest of the workspace (via the
+# root `[patch.crates-io]`), drives the real `View` through `rindle`'s `testkit`
+# runners, and compiles the query with `rindle-d2s`, so both sides of every assert see
+# identical data and value/collation/LIKE semantics.
+[package]
+name = "rindle-testfix"
+version = "0.1.0"
+edition = "2021"
+description = "Shared chinook/mini fixtures + the IVM↔SQLite differential parity harness, reused by rindle-d2s tests and the rindle-fuzz generator."
+license = "Apache-2.0"
+repository = "https://github.com/rindle-sh/rindle"
+publish = false
+
+[dependencies]
+# The real IVM engine + the `testkit` runners (`run_*_ast_view`, `TableSpec`,
+# `ast_view_schema`) the parity asserts drive the `View` through.
+rindle = { path = "..", features = ["testkit"] }
+# The AST→SQLite compiler (`compile`) + `Catalog`/`Cardinality` the oracle runs.
+rindle-d2s = { path = "../rindle-d2s" }
+# The oracle executes the compiled `SELECT` against real (vendored bedrock) SQLite
+# and parses the nested-JSON result cell.
+rusqlite = { version = "0.32", features = ["bundled"] }
+serde_json = "1"

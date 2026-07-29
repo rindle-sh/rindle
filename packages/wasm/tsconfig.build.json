@@ -1,0 +1,16 @@
+{
+  // Emit profile: compile `src/index.ts` to `dist/` as runnable ESM `.js` + `.d.ts`. The
+  // generated wasm glue (`../pkg/rindle.js`) and `@rindle/client` are left as-is in the output
+  // (a `.js` import and a bare specifier — neither is a relative `.ts`, so nothing to rewrite).
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "rootDir": "./src",
+    "outDir": "./dist",
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true,
+    "rewriteRelativeImportExtensions": true
+  },
+  "include": ["src"]
+}

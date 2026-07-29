@@ -1,0 +1,96 @@
+/* The live footprint strip (MetricsBar.tsx) — sits under the top bar, mono + paper tones to match
+   the tracker. Mirrors the wiki demo's packed-slot badge: a tiny CPU/RAM readout that
+   stays calm while the swarm storms the daemon. */
+
+.it-machine {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.55rem 0.7rem;
+  padding: 0.4rem 0.9rem;
+  border-bottom: 1px solid var(--line);
+  background: color-mix(in srgb, var(--panel) 88%, transparent);
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  letter-spacing: 0.01em;
+  color: var(--ink-f);
+}
+
+.it-machine b {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.it-machine-label {
+  text-transform: uppercase;
+  font-size: 0.62rem;
+  letter-spacing: 0.08em;
+  color: var(--ink-f);
+}
+
+.it-machine-stat {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.3rem;
+}
+
+.it-machine-sub {
+  color: var(--ink-f);
+  opacity: 0.8;
+  font-size: 0.66rem;
+}
+
+.it-machine-sep {
+  width: 1px;
+  height: 0.85rem;
+  background: var(--line2);
+  opacity: 0.7;
+}
+
+/* The load side — the swarm hammering the box. The orange accent + the live dot mark it as the
+   "incoming write storm" half of the strip. */
+.it-machine-load {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.35rem;
+  color: var(--orange);
+}
+.it-machine-load b {
+  color: var(--orange);
+}
+.it-machine-load .it-machine-sub {
+  color: color-mix(in srgb, var(--orange) 70%, var(--ink-f));
+  opacity: 1;
+}
+
+.it-machine-dot {
+  align-self: center;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--orange);
+  box-shadow: 0 0 0 0 color-mix(in srgb, var(--orange) 55%, transparent);
+  animation: it-machine-pulse 1.6s ease-out infinite;
+}
+
+@keyframes it-machine-pulse {
+  0% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--orange) 55%, transparent);
+  }
+  70% {
+    box-shadow: 0 0 0 6px transparent;
+  }
+  100% {
+    box-shadow: 0 0 0 0 transparent;
+  }
+}
+
+.it-machine-cost b {
+  color: var(--teal);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .it-machine-dot {
+    animation: none;
+  }
+}

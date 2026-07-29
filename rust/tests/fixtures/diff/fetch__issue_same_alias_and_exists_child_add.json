@@ -1,0 +1,113 @@
+{
+  "kind": "fetch",
+  "input": {
+    "sources": {
+      "issue": {
+        "columns": {
+          "id": {
+            "type": "number"
+          },
+          "val": {
+            "type": "number"
+          }
+        },
+        "primaryKeys": [
+          "id"
+        ]
+      },
+      "comment": {
+        "columns": {
+          "id": {
+            "type": "number"
+          },
+          "issue": {
+            "type": "number"
+          }
+        },
+        "primaryKeys": [
+          "id"
+        ]
+      }
+    },
+    "sourceContents": {
+      "issue": [
+        {
+          "id": 1,
+          "val": 100
+        },
+        {
+          "id": 2,
+          "val": 200
+        }
+      ],
+      "comment": [
+        {
+          "id": 10,
+          "issue": 1
+        }
+      ]
+    },
+    "ast": {
+      "table": "issue",
+      "where": {
+        "type": "and",
+        "conditions": [
+          {
+            "type": "correlatedSubquery",
+            "op": "EXISTS",
+            "related": {
+              "correlation": {
+                "parentField": [
+                  "id"
+                ],
+                "childField": [
+                  "issue"
+                ]
+              },
+              "subquery": {
+                "table": "comment",
+                "alias": "comments"
+              }
+            }
+          },
+          {
+            "type": "correlatedSubquery",
+            "op": "EXISTS",
+            "related": {
+              "correlation": {
+                "parentField": [
+                  "id"
+                ],
+                "childField": [
+                  "issue"
+                ]
+              },
+              "subquery": {
+                "table": "comment",
+                "alias": "comments"
+              }
+            }
+          }
+        ]
+      },
+      "orderBy": [
+        [
+          "id",
+          "asc"
+        ]
+      ]
+    },
+    "format": {
+      "singular": false,
+      "relationships": {}
+    }
+  },
+  "expected": {
+    "data": [
+      {
+        "id": 1,
+        "val": 100
+      }
+    ]
+  }
+}

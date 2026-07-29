@@ -1,0 +1,40 @@
+# `rindle-planner` — a faithful Rust port of Zero's cost-based query planner
+# (`mono/packages/zql/src/planner/`). A pure `plan_query(ast, cost_model) -> ast`
+# transform that annotates `WHERE EXISTS` correlated-subquery conditions with
+# `flip: true` when the cost model says the child-driven (flipped) join is cheaper.
+# It owns no runtime and links no `rusqlite`: it reads the `rindle` AST, builds an
+# in-memory `PlannerGraph`, enumerates the 2^n join-flip patterns, and rewrites the
+# AST. The lowering builder (`rindle::build_pipeline`) already consumes `flip`.
+#
+# Target: byte-for-byte parity with the JS planner, validated by a differential test
+# (Stage 6) over the same ASTs + the shared deterministic `SimpleCostModel`. See the
+# top-level `PLANNER-PORT-DESIGN.md`.
+[package]
+name = "rindle-planner"
+version = "0.1.0"
+edition = "2021"
+description = "Cost-based WHERE-EXISTS join-flip query planner — a faithful Rust port of Zero's zql planner; pure AST -> AST."
+license = "Apache-2.0"
+repository = "https://github.com/rindle-sh/rindle"
+publish = false
+
+[dependencies]
+# The planner core only needs the AST types (`Condition`, `OrderPart`, `Ast`, …); it
+# reads/writes them structurally, so no serde and no rusqlite. The Stage-6
+# differential harness will add `rindle`'s serde/testkit as a dev-dependency to
+# (de)serialize the JS fixtures.
+rindle = { path = ".." }
+# Insertion-ordered set for `PlannerConstraint`, matching JS object-key order — which
+# the flipped-join constraint translation depends on (index-based parent→child key
+# mapping). Already in the workspace lock.
+indexmap = "2"
+
+[dev-dependencies]
+# `testkit` (which pulls `serde`) for two test families, both dev-only — the shipping
+# planner stays serde-free:
+#   - tests/parity.rs deserializes the JS-generated fixture ASTs (`serde`)
+#   - tests/result_preservation.rs runs planned vs unplanned ASTs through the real IVM
+#     `View` to prove flipping is result-preserving (the testkit runners, memory backend)
+rindle = { path = "..", features = ["testkit"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"

@@ -1,0 +1,50 @@
+{
+  "name": "@rindle/narrator-react",
+  "version": "0.0.0",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/rindle-sh/rindle.git",
+    "directory": "packages/narrator-react"
+  },
+  "type": "module",
+  "description": "React integration for @rindle/narrator: subscribe to a Rindle query's netted change stream and buffer agent-ready semantic events.",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "@rindle/source": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "src",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit",
+    "test": "tsc --noEmit && node --conditions=@rindle/source --test test/*.test.ts"
+  },
+  "dependencies": {
+    "@rindle/client": "workspace:*",
+    "@rindle/narrator": "workspace:*",
+    "@rindle/react": "workspace:*"
+  },
+  "peerDependencies": {
+    "react": ">=18.0.0"
+  },
+  "devDependencies": {
+    "@types/jsdom": "^21.1.0",
+    "@types/node": "^22.10.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "jsdom": "^25.0.0",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0",
+    "typescript": "^5.7.0"
+  }
+}

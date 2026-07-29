@@ -1,0 +1,45 @@
+{
+  "name": "@rindle/wasm",
+  "version": "0.0.0",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/rindle-sh/rindle.git",
+    "directory": "packages/wasm"
+  },
+  "type": "module",
+  "description": "WASM backend for @rindle/client — the in-process IVM engine behind the Backend seam.",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "@rindle/source": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./package.json": "./package.json",
+    "./pkg/*": "./pkg/*"
+  },
+  "files": [
+    "dist",
+    "src",
+    "pkg",
+    "build.sh",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "build:wasm": "./build.sh",
+    "typecheck": "tsc --noEmit",
+    "test": "node test/bundle-size.mjs && node --conditions=@rindle/source test/e2e.mjs && node --conditions=@rindle/source test/one-start.e2e.mjs && node --conditions=@rindle/source test/repro-high.e2e.mjs && node --conditions=@rindle/source test/partial-write.e2e.mjs && node --conditions=@rindle/source test/bigint-boundary.e2e.mjs",
+    "test:browser": "node test/browser-smoke.mjs"
+  },
+  "dependencies": {
+    "@rindle/client": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "typescript": "^5.7.0"
+  }
+}

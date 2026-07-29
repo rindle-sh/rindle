@@ -1,0 +1,20 @@
+{
+  // Typecheck profile (no emit). `customConditions` resolves @rindle/client to its TS source,
+  // so typecheck/build never depends on the sibling's `dist/` being built. The native binding
+  // (`../index.js`) resolves to its generated `../index.d.ts` (outside rootDir, but a
+  // declaration file is never emitted, so it raises no TS6059).
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "lib": ["ES2022"],
+    "strict": true,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "verbatimModuleSyntax": true,
+    "allowImportingTsExtensions": true,
+    "customConditions": ["@rindle/source"],
+    "types": ["node"]
+  },
+  "include": ["src"]
+}

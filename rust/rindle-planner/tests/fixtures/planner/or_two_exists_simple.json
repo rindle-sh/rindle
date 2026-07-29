@@ -1,0 +1,54 @@
+{
+  "name": "or_two_exists_simple",
+  "ast": {
+    "table": "users",
+    "where": {
+      "type": "or",
+      "conditions": [
+        {
+          "type": "correlatedSubquery",
+          "op": "EXISTS",
+          "related": {
+            "correlation": {
+              "parentField": [
+                "id"
+              ],
+              "childField": [
+                "userId"
+              ]
+            },
+            "subquery": {
+              "table": "posts",
+              "alias": "posts"
+            }
+          }
+        },
+        {
+          "type": "correlatedSubquery",
+          "op": "EXISTS",
+          "related": {
+            "correlation": {
+              "parentField": [
+                "id"
+              ],
+              "childField": [
+                "userId"
+              ]
+            },
+            "subquery": {
+              "table": "comments",
+              "alias": "comments"
+            }
+          }
+        }
+      ]
+    }
+  },
+  "costModel": {
+    "kind": "simple"
+  },
+  "flips": [
+    false,
+    false
+  ]
+}

@@ -1,0 +1,36 @@
+# `rindle-d2s` — compile a deltic `Ast` into a single SQLite `SELECT` that returns the
+# whole query result as one nested-JSON column. The SQLite analogue of mono's
+# `z2s` package (which targets Postgres). Pure `Ast + Catalog -> String`: it owns
+# no runtime, links no `rusqlite`, and inlines literals as native SQLite values
+# (none of z2s's Postgres `::text::<type>` casting). Its first consumer is the
+# differential fuzzer's oracle (`rindle-fuzz`, future), where the emitted SQL is the
+# independent declarative ground truth the IVM engine is checked against.
+[package]
+name = "rindle-d2s"
+version = "0.1.0"
+edition = "2021"
+description = "Compile a deltic AST into a single SQLite SELECT returning the query result as nested JSON (the SQLite analogue of mono's z2s)."
+license = "Apache-2.0"
+repository = "https://github.com/rindle-sh/rindle"
+publish = false
+
+[dependencies]
+# The compiler only needs the AST types + `complete_ordering` (the always-includes-PK
+# pass, shared with the IVM builder so both sides sort identically). No rusqlite.
+rindle = { path = ".." }
+
+[dev-dependencies]
+# Tests execute the emitted SQL against real SQLite (the same vendored bedrock
+# amalgamation as the rest of the workspace, via the root `[patch.crates-io]`) and
+# parse the JSON result to assert against the expected tree.
+rusqlite = { version = "0.32", features = ["bundled"] }
+serde_json = "1"
+# The IVM-parity tests (`tests/ivm_parity.rs`) drive the SAME `Ast` through the real
+# `View` (memory backend) via the `testkit` runners and assert its materialized tree
+# equals the SQLite oracle's — the gold-standard check this crate exists to serve.
+rindle = { path = "..", features = ["testkit"] }
+# The parity harness + chinook/mini fixtures, graduated out of `tests/harness/` into
+# a reusable library so `rindle-fuzz` can drive the same oracle. `tests/harness/mod.rs`
+# is now a thin re-export shim over this. (`rindle-testfix` depends on `rindle-d2s`; the
+# resulting cycle is permitted because it runs through this dev-dependency edge.)
+rindle-testfix = { path = "../rindle-testfix" }

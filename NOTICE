@@ -1,0 +1,32 @@
+rindle — incremental view maintenance (IVM) engine
+Copyright 2026 Matt Wonlaw
+
+This product is a Rust port of the ZQL query/dataflow engine from Rocicorp's
+Zero (https://github.com/rocicorp/mono), which is licensed under the Apache
+License, Version 2.0. Portions of the design and behavior are derived from that
+work and remain under Apache-2.0.
+
+Licensed under the Apache License, Version 2.0 (the "License"); you may not use
+this file except in compliance with the License. You may obtain a copy of the
+License in the LICENSE file at the root of this repository, or at:
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+-------------------------------------------------------------------------------
+Third-party / vendored components
+-------------------------------------------------------------------------------
+
+rust/vendor/libsqlite3-sys/
+    A vendored copy of `libsqlite3-sys` (the FFI -sys crate behind rusqlite),
+    Copyright the rusqlite developers, licensed under the MIT License (see
+    rust/vendor/libsqlite3-sys/LICENSE). It is unmodified except that its bundled
+    SQLite amalgamation (sqlite3/sqlite3.{c,h}, sqlite3ext.h) is replaced with a
+    bedrock-branch SQLite 3.54.0 amalgamation (wal2 + BEGIN CONCURRENT; see
+    docs/SQLITE_WAL2.md in the upstream monorepo). It is wired in via [patch.crates-io] in
+    rust/Cargo.toml so every SQLite-linking crate links bedrock.
+
+rust/vendor/libsqlite3-sys/sqlite3/sqlite3.{c,h}, sqlite3ext.h
+    SQLite (https://sqlite.org), bedrock branch (wal2 + BEGIN CONCURRENT),
+    version 3.54.0. SQLite is in the public domain. Generated with the
+    zero-sqlite3 production define set; see scripts/regen-bedrock-amalgamation.sh
+    (in the upstream monorepo).

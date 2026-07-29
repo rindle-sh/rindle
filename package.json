@@ -1,0 +1,14 @@
+{
+  "name": "rindle",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Rindle — an incremental view maintenance (IVM) engine: the Rust core engine and its SQLite adapter (rust/), plus the @rindle/* JavaScript packages.",
+  "packageManager": "pnpm@11.2.2",
+  "scripts": {
+    "build:wasm": "pnpm --filter @rindle/wasm run build:wasm",
+    "build": "pnpm --filter @rindle/client run build && pnpm --filter @rindle/narrator run build && pnpm --filter @rindle/wasm run build && pnpm --filter @rindle/replica run build && pnpm --filter @rindle/affinity run build && pnpm --filter @rindle/remote run build && pnpm --filter @rindle/daemon-client run build && pnpm --filter @rindle/sql-client run build && pnpm --filter @rindle/api-server run build && pnpm --filter @rindle/server run build && pnpm --filter @rindle/normalized run build && pnpm --filter @rindle/optimistic run build && pnpm --filter @rindle/react run build && pnpm --filter @rindle/tanstack run build && pnpm --filter @rindle/narrator-react run build && pnpm --filter @rindle/devtools run build && pnpm --filter @rindle/react-devtools run build && pnpm --filter @rindle/cli run build && pnpm --filter @rindle/query-compiler run build",
+    "typecheck": "pnpm --filter @rindle/client --filter @rindle/narrator --filter @rindle/wasm --filter @rindle/replica --filter @rindle/affinity --filter @rindle/remote --filter @rindle/daemon-client --filter @rindle/sql-client --filter @rindle/api-server --filter @rindle/server --filter @rindle/normalized --filter @rindle/optimistic --filter @rindle/react --filter @rindle/tanstack --filter @rindle/narrator-react --filter @rindle/devtools --filter @rindle/react-devtools --filter @rindle/cli --filter @rindle/wiki-demo --filter create-rindle --filter @rindle/query-compiler run typecheck",
+    "test": "pnpm --filter @rindle/client --filter @rindle/narrator --filter @rindle/wasm --filter @rindle/replica --filter @rindle/affinity --filter @rindle/remote --filter @rindle/daemon-client --filter @rindle/sql-client --filter @rindle/api-server --filter @rindle/server --filter @rindle/normalized --filter @rindle/optimistic --filter @rindle/react --filter @rindle/tanstack --filter @rindle/narrator-react --filter @rindle/devtools --filter @rindle/react-devtools --filter @rindle/cli --filter @rindle/example-issue-tracker --filter @rindle/example-forum --filter @rindle/todo-mvc --filter create-rindle --filter @rindle/query-compiler run test",
+    "test:browser": "pnpm run build && pnpm --filter @rindle/wasm run test:browser"
+  }
+}

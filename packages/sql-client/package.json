@@ -1,0 +1,51 @@
+{
+  "name": "@rindle/sql-client",
+  "version": "0.0.0",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/rindle-sh/rindle.git",
+    "directory": "packages/sql-client"
+  },
+  "type": "module",
+  "description": "Fetch-native TypeScript client for Rindle SQL.",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "@rindle/source": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./drizzle": {
+      "@rindle/source": "./src/drizzle.ts",
+      "types": "./dist/drizzle.d.ts",
+      "default": "./dist/drizzle.js"
+    }
+  },
+  "files": [
+    "dist",
+    "src",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit",
+    "test": "tsc --noEmit && node --conditions=@rindle/source --test test/*.test.ts",
+    "test:rust-daemon": "node --conditions=@rindle/source test/live-server.e2e.mjs"
+  },
+  "peerDependencies": {
+    "drizzle-orm": "0.44.7"
+  },
+  "peerDependenciesMeta": {
+    "drizzle-orm": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "drizzle-orm": "0.44.7",
+    "typescript": "^5.7.0"
+  }
+}
