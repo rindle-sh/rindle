@@ -27,12 +27,14 @@ const appRoot = resolve(fileURLToPath(new URL(".", import.meta.url)), "..");
 const repoRoot = resolve(appRoot, "../..");
 const migrationsDir = join(appRoot, "migrations");
 
-// Migrations + seed are WRITES → the write-master. Use an explicitly named replicator origin,
-// falling back only to the local master port for dev.
-const DAEMON_URL =
-  process.env.RINDLE_REPLICATOR_URL ??
-  process.env.REPLICATOR_ORIGIN ??
-  "http://127.0.0.1:7611";
+// Migrations + seed are WRITES → the write-master, named explicitly. There is no local-port
+// fallback: the fleet's ports are allocated PER PROJECT, so a hardcoded default would either point
+// at nothing or, worse, at another project's master. `pnpm dev` injects this from the rendered
+// rindle.json bindings; `rindle render` prints the resolved URLs.
+const DAEMON_URL = process.env.RINDLE_REPLICATOR_URL ?? process.env.REPLICATOR_ORIGIN;
+if (!DAEMON_URL) {
+  throw new Error("RINDLE_REPLICATOR_URL is required: migrations are writes and must target the write-master");
+}
 const DAEMON_TOKEN =
   process.env.RINDLE_REPLICATOR_TOKEN ??
   process.env.WRITE_TOKEN ??

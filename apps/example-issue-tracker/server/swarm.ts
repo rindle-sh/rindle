@@ -50,7 +50,7 @@ import {
 import { DEFAULT_RINDLE_API_ROUTES } from "@rindle/api-server";
 import type { RindleApiServer } from "@rindle/api-server";
 
-import { createIssueApi } from "./app-api.ts";
+import { createIssueApi, requiredEnv } from "./app-api.ts";
 import type { User } from "./app-api.ts";
 import { startMachineStats } from "./machine-stats.ts";
 
@@ -82,10 +82,9 @@ const SPAM_RATE = (() => {
 })();
 const METRICS_PORT = Math.floor(numEnv("SWARM_METRICS_PORT", 7711));
 
-const DAEMON_URL = process.env.RINDLE_DAEMON_URL ?? "http://127.0.0.1:7600";
+const DAEMON_URL = requiredEnv("RINDLE_DAEMON_URL");
 const DAEMON_TOKEN = process.env.RINDLE_DAEMON_TOKEN ?? "dev-daemon-token";
-const DAEMON_WS_URL =
-  process.env.DAEMON_WS_URL ?? process.env.RINDLE_FLEET_WS ?? "ws://127.0.0.1:7601";
+const DAEMON_WS_URL = requiredEnv("DAEMON_WS_URL", "RINDLE_FLEET_WS");
 const SWARM_PID = Number(process.env.SWARM_PID);
 // REMOTE mode: when SWARM_API_URL is set, drive the PUBLIC edge (the Cloudflare Worker) instead of
 // embedding the authority + talking to a local control plane. No daemon token — same path a browser hits.

@@ -43,6 +43,17 @@ export type {
 
 export { stableKey } from "./key.ts"; // canonical viewKey for an AST (shared with @rindle/react)
 
+// The LM stream plane's shared contract (LM-STREAM-CHECKPOINT-DESIGN.md): frame shapes + the two pure
+// reassembly functions. Lives here because BOTH tiers need them — `@rindle/api-server` re-exports
+// every name, and `@rindle/react`'s `useStreamedText` builds on them without a server import.
+export {
+  STREAM_STATUS_STREAMING,
+  assembleDurableText,
+  frameResumePoint,
+  spliceStreamText,
+} from "./stream.ts";
+export type { StreamFrame, StreamStatus } from "./stream.ts";
+
 export { COMPARATOR_VERSION, compareNumber, compareRows, compareString, compareValue } from "./compare.ts";
 
 export type {

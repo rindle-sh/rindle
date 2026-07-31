@@ -454,3 +454,70 @@ test("scoped: on the daemon backend, outside-tx work precedes the accumulated ba
   assert.ok(insert.sql.startsWith('INSERT INTO "order"'));
   assert.deepEqual(insert.params, ["o1", 5, "ch_8"]); // SQLite `?` placeholders, chargeId from outside-tx
 });
+
+// --------------------------------------------------------------------------- transact's return value
+
+test("scope.transact returns its body's value — a post-commit effect decided by a TRANSACTIONAL read", async () => {
+  const plugger = new FakePlugger();
+  const fired: unknown[] = [];
+  const api = createRindleApiServer({
+    daemon: readOnlyDaemon(),
+    backend: postgresBackend(plugger),
+    schema,
+    mutators: defineApiMutators({
+      place: scoped(async (scope, raw) => {
+        const a = raw as { id: string; amount: number };
+        // The decision is computed INSIDE the transaction, from a read that sees exactly the state
+        // the write commits against — not from a second, racy read afterwards.
+        const kick = await scope.transact(async (tx) => {
+          await tx.sql.execute("insert into order (id, amount) values ($1, $2)", [a.id, a.amount]);
+          const rows = await tx.sql.query<{ total: number }>("select 1 as total");
+          return rows.length >= 0 ? { shipTo: a.id, at: "in-tx" } : undefined;
+        });
+        // Only reachable when the transaction COMMITTED.
+        if (kick) fired.push(kick);
+      }),
+    }),
+  });
+
+  const res = await api.pushMutation({
+    user: undefined,
+    envelope: { clientID: "c1", mid: 1, name: "place", args: { id: "o1", amount: 5 } },
+  });
+
+  assert.equal(res.accepted, true);
+  assert.deepEqual(fired, [{ shipTo: "o1", at: "in-tx" }]);
+});
+
+test("a rolled-back transaction yields NO value — the effect cannot fire on work that vanished", async () => {
+  const plugger = new FakePlugger();
+  const fired: unknown[] = [];
+  const api = createRindleApiServer({
+    daemon: readOnlyDaemon(),
+    backend: postgresBackend(plugger),
+    schema,
+    mutators: defineApiMutators({
+      place: scoped(async (scope, _raw) => {
+        try {
+          const kick = await scope.transact(async (tx) => {
+            await tx.sql.execute("insert into order (id, amount) values ($1, $2)", ["o1", 1]);
+            throw new Error("over quota"); // a BUSINESS rejection: the data rolls back
+          });
+          fired.push(kick); // unreachable
+        } catch (err) {
+          assert.ok(err instanceof MutationRejected);
+        }
+      }),
+    }),
+  });
+
+  const res = await api.pushMutation({
+    user: undefined,
+    envelope: { clientID: "c1", mid: 1, name: "place", args: {} },
+  });
+
+  assert.equal(res.rejected, true);
+  assert.deepEqual(fired, [], "no value escaped the rejected transaction");
+  // `lmid` still advanced alone, so the client's queue drains.
+  assert.ok(flat(plugger.txns).some(isLmidUpsert));
+});

@@ -1,6 +1,6 @@
 //! The build-gated latency histograms (the `metrics` feature, 208.2): the `Histogram`
 //! primitive's shape (cumulative monotonicity, `_count == Σ` per-bucket, `+Inf` catch),
-//! and that the `source_push` / `hydrate` seams actually observe into the process-global
+//! and that the `apply_batch` / `hydrate` seams actually observe into the process-global
 //! registry. Only compiled/run with `--features metrics`; a no-op otherwise.
 
 #![cfg(feature = "metrics")]
@@ -37,7 +37,7 @@ fn histogram_shape_and_sum() {
         "one _count per observation"
     );
     assert_eq!(
-        snap.sum_micros,
+        snap.sum,
         samples.iter().sum::<u64>(),
         "_sum is Σ observed µs"
     );
@@ -80,33 +80,60 @@ fn observe_le_boundary_is_inclusive() {
 }
 
 // -- seam: the ONLY test in this binary that touches the process-global registry, so its
-//    before/after delta is exact (per-binary statics; nothing else races them). The timer
-//    wraps `Graph::try_source_push` / `try_hydrate`, which are backend-agnostic (memory and
-//    SQLite sources flow through the same seam), so counting the memory path proves both. --
+//    before/after delta is exact (per-binary statics; nothing else races them). The seams are
+//    backend-agnostic (memory and SQLite sources flow through the same `try_source_push` /
+//    `try_hydrate`), so counting the memory path proves both. --
 
+/// Latency is per BATCH, not per push. This is the load-bearing assertion of the batch-scope
+/// design: N pushes inside one scope must produce ONE latency observation carrying N rows.
+///
+/// The inverse — `push_count == N` — is what this deliberately no longer does. A per-push
+/// timer meant a 100k-row write paid 100k `Instant::now()` pairs (~15ns each, ~13% of a
+/// minimal push) for samples that all landed in the first bucket anyway, since the µs bounds
+/// start at 50µs and a push takes ~150ns.
+///
+/// What a bare `Graph` CANNOT show is the other half of the contract — that a batch is not a
+/// transaction, because `rindle-replica` chunks and broadcasts. That is pinned one layer up,
+/// in `rindle-server`'s `net_metrics.rs`, where a real multi-worker cluster is running.
 #[test]
-fn source_push_and_hydrate_latency_observed() {
-    let push_before = rindle::metrics::engine_hist().source_push.snapshot();
+fn apply_batch_latency_is_per_batch_and_carries_its_row_count() {
+    let batch_before = rindle::metrics::engine_hist().apply_batch.snapshot();
+    let rows_before = rindle::metrics::engine_hist().apply_batch_rows.snapshot();
     let hydrate_before = rindle::metrics::engine_hist().hydrate.snapshot();
 
     let mut g = Graph::new();
     let src = g.add_source(id_schema(), Vec::new());
     const N: u64 = 5;
-    for i in 0..N as i64 {
-        g.source_push(src, SourceChange::Add(row(i)));
-    }
-    // A view over a source connection, hydrated once.
+    {
+        let _batch = rindle::metrics::apply_batch(N);
+        for i in 0..N as i64 {
+            g.source_push(src, SourceChange::Add(row(i)));
+        }
+    } // scope closes here — one observation, not N
+      // A view over a source connection, hydrated once.
     let conn = g.connect(src, None, None, Vec::new());
     let view = g.add_view(conn, Schema::new(vec!["id"], vec![0], vec![(0, true)]));
     g.hydrate(view);
 
-    let push_after = rindle::metrics::engine_hist().source_push.snapshot();
+    let batch_after = rindle::metrics::engine_hist().apply_batch.snapshot();
+    let rows_after = rindle::metrics::engine_hist().apply_batch_rows.snapshot();
     let hydrate_after = rindle::metrics::engine_hist().hydrate.snapshot();
 
     assert_eq!(
-        push_after.count - push_before.count,
+        batch_after.count - batch_before.count,
+        1,
+        "ONE apply_batch_seconds observation per batch, regardless of how many rows it pushed"
+    );
+    assert_eq!(
+        rows_after.count - rows_before.count,
+        1,
+        "the size companion observes exactly once per batch, from the same guard drop"
+    );
+    assert_eq!(
+        rows_after.sum - rows_before.sum,
         N,
-        "one source_push_seconds observation per push"
+        "apply_batch_rows _sum accumulates ROWS (this is the denominator that keeps mean \
+         per-row cost recoverable), not microseconds"
     );
     assert_eq!(
         hydrate_after.count - hydrate_before.count,
@@ -115,8 +142,33 @@ fn source_push_and_hydrate_latency_observed() {
     );
     // Bucket totals stay consistent with the count on the live registry too.
     assert_eq!(
-        push_after.buckets.iter().sum::<u64>(),
-        push_after.count,
+        batch_after.buckets.iter().sum::<u64>(),
+        batch_after.count,
         "live registry: per-bucket Σ == _count"
+    );
+
+    // -- and the other half of the contract, asserted HERE rather than in its own #[test]:
+    //    the registry is a per-binary static and `cargo test` runs tests in parallel, so a
+    //    second test taking before/after deltas would race this one (it did — it saw this
+    //    test's 5 pushes in its own delta). One registry-touching test per binary.
+    //
+    //    A caller that declares no batch is NOT timed, but its rows are still counted — so
+    //    an embedder with no batch boundary keeps working, and the counter that makes mean
+    //    per-row cost recoverable never silently stops.
+    let unscoped_batch_before = rindle::metrics::engine_hist().apply_batch.snapshot();
+    let changes_before = rindle::metrics::snapshot().changes_add;
+    const M: i64 = 3;
+    for i in 100..100 + M {
+        g.source_push(src, SourceChange::Add(row(i)));
+    }
+    assert_eq!(
+        rindle::metrics::engine_hist().apply_batch.snapshot().count,
+        unscoped_batch_before.count,
+        "an unscoped push records NO latency observation (no clock read on that path)"
+    );
+    assert_eq!(
+        rindle::metrics::snapshot().changes_add - changes_before,
+        M as u64,
+        "...but every change is still counted — that counter is clock-free and per-change"
     );
 }

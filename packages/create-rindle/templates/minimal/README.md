@@ -71,7 +71,7 @@ see the rejection path (the optimistic write snaps back + a toast).
 ```bash
 rindle login                  # once — authenticate to Rindle Cloud
 pnpm rindle:deploy            # provision / re-attach the managed app (writes .rindle/cloud.json)
-pnpm rindle:migrate:remote    # push migrations/*.sql to the deployed write-master
+pnpm rindle:migrate:cloud     # push migrations/*.sql to the deployed write-master
 ```
 
 `rindle deploy` reads `rindle.ncl` and records the binding in `.rindle/cloud.json` — commit it, so

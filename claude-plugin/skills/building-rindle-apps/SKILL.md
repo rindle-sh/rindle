@@ -150,9 +150,9 @@ not immediately catch. Treat every violation as a bug.
    up for "load more". IVM keeps the window — and any `countAs` — exact as rows
    enter and leave.
 
-7. **The daemon token is server-only.** It gates the private HTTP control plane
-   (`:7600`). The browser only ever holds the lease-gated public WebSocket
-   (`:7601`). Never ship the token to the browser.
+7. **The daemon token is server-only.** It gates the private HTTP control plane.
+   The browser only ever holds the lease-gated public WebSocket. Never ship the
+   token to the browser.
 
 8. **Keep `*.queries.ts` modules framework-free.** No component imports. The
    browser, the API authority, and any SSR loader all import these same modules, so
@@ -180,8 +180,14 @@ daemon.json                   the local daemon config (from `rindle init`)
   Node's type stripping.
 - **`@rindle/cli` ships prebuilt binaries** for both `rindle` and `rindled` — no
   Rust toolchain needed for app development.
-- Daemon ports: **7600** = private HTTP control plane (API server only, bearer
-  token), **7601** = public WebSocket (browser subscriptions).
+- Daemon ports are **allocated per project**, not fixed — each project (and each
+  git worktree of one) gets its own block, so several Rindle apps can run at
+  once. Never hardcode a port: `rindle dev` injects the bindings as environment,
+  and `rindle.json`'s `bindings` carries the resolved URLs. Within a project's
+  block the follower's private HTTP control plane (API server only, bearer token)
+  is `portBase`, its public WebSocket (browser subscriptions) is `portBase + 1`,
+  and the app-facing fleet edge is `portBase + 50`. `rindle render` prints them;
+  see the [rindle CLI docs](https://rindle.sh/docs/rindle-cli).
 - Column types: `TEXT`→`string()`, `INTEGER`/`REAL`→`number()`, `BOOLEAN`→
   `boolean()`, `JSON`→`json()`. Numbers are `f64` (no `bigint`); no `blob` yet.
 

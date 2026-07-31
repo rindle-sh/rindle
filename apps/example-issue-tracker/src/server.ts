@@ -12,14 +12,13 @@
 import { createStartHandler, defaultStreamHandler } from "@tanstack/react-start/server";
 import type { OneShotQueryFn, OneShotResult } from "@rindle/client";
 
-import { createIssueApi } from "../server/app-api.ts";
+import { createIssueApi, requiredEnv } from "../server/app-api.ts";
 import type { IssueApiOptions } from "../server/app-api.ts";
 import { configureSsrReader, SSR_USER } from "./ssr.ts";
 
 /** The Start SSR handler — server-renders the matched route to a stream (`(request, opts) => Response`). */
 export const ssrHandler = createStartHandler(defaultStreamHandler);
 
-const DAEMON_URL = process.env.RINDLE_DAEMON_URL ?? process.env.DAEMON_ORIGIN ?? "http://127.0.0.1:7600";
 const DAEMON_TOKEN = process.env.RINDLE_DAEMON_TOKEN ?? process.env.DAEMON_TOKEN ?? "dev-daemon-token";
 const REPLICATOR_URL = process.env.RINDLE_REPLICATOR_URL ?? process.env.REPLICATOR_ORIGIN;
 const REPLICATOR_TOKEN = process.env.RINDLE_REPLICATOR_TOKEN ?? process.env.WRITE_TOKEN;
@@ -40,15 +39,21 @@ export function makeSsrReader(cfg: IssueApiOptions): OneShotQueryFn {
   };
 }
 
-// The node host's SSR reader (daemon config from process.env, resolved once). The Worker builds its
-// own from `env` (worker.ts); both install it via configureSsrReader before SSR renders.
-const nodeSsrReader = makeSsrReader({
-  daemonUrl: DAEMON_URL,
-  daemonToken: DAEMON_TOKEN,
-  replicatorUrl: REPLICATOR_URL,
-  replicatorToken: REPLICATOR_TOKEN,
-  databaseToken: DATABASE_TOKEN,
-});
+// The node host's SSR reader (daemon config from process.env). Built on FIRST USE, not at module
+// scope: `worker.ts` imports this module, and on Cloudflare there is no `process` to read — the
+// Worker supplies its own reader from `env` bindings instead. Resolving the URL eagerly here would
+// throw at Worker startup.
+let nodeSsrReaderMemo: OneShotQueryFn | undefined;
+const nodeSsrReader: OneShotQueryFn = (req) => {
+  nodeSsrReaderMemo ??= makeSsrReader({
+    daemonUrl: requiredEnv("RINDLE_DAEMON_URL", "DAEMON_ORIGIN"),
+    daemonToken: DAEMON_TOKEN,
+    replicatorUrl: REPLICATOR_URL,
+    replicatorToken: REPLICATOR_TOKEN,
+    databaseToken: DATABASE_TOKEN,
+  });
+  return nodeSsrReaderMemo(req);
+};
 
 /** Route API requests to the authority, server-render everything else (`(request) => Response`). */
 async function handler(request: Request): Promise<Response> {

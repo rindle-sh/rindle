@@ -5,11 +5,11 @@
 import { createServer } from "node:http";
 import type { IncomingHttpHeaders, IncomingMessage } from "node:http";
 
-import { createIssueApi, httpErrorOf } from "./app-api.ts";
+import { createIssueApi, httpErrorOf, requiredEnv } from "./app-api.ts";
 import type { User } from "./app-api.ts";
 import type { ApiContext } from "@rindle/api-server";
 
-const DAEMON_URL = process.env.RINDLE_DAEMON_URL ?? "http://127.0.0.1:7600";
+const DAEMON_URL = requiredEnv("RINDLE_DAEMON_URL");
 const DAEMON_TOKEN = process.env.RINDLE_DAEMON_TOKEN ?? "dev-daemon-token";
 // One topology (design 214): the replicator write-master's ingress. Set ⇒ writes + mutation
 // sessions route there (SplitDaemonClient); reads keep coming off the follower (DAEMON_URL).

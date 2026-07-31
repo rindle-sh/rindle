@@ -15,10 +15,12 @@ import type { SqlStatement, WireValue } from "@rindle/daemon-client";
 
 import { voteId } from "../shared/app-def.ts";
 
-const DAEMON_URL =
-  process.env.RINDLE_REPLICATOR_URL ??
-  process.env.REPLICATOR_ORIGIN ??
-  "http://127.0.0.1:7611";
+// No local-port fallback: ports are allocated per project, so a hardcoded default would point at
+// nothing — or at another project's write-master. `pnpm dev` injects this from rindle.json.
+const DAEMON_URL = process.env.RINDLE_REPLICATOR_URL ?? process.env.REPLICATOR_ORIGIN;
+if (!DAEMON_URL) {
+  throw new Error("RINDLE_REPLICATOR_URL is required: the seed writes and must target the write-master");
+}
 const DAEMON_TOKEN =
   process.env.RINDLE_REPLICATOR_TOKEN ??
   process.env.WRITE_TOKEN ??

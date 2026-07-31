@@ -74,6 +74,22 @@ import {
   splitRoomDoc,
 } from "./rooms.ts";
 import type { RoomProfile, RoomScopeSpec, RoomTableSpec } from "./rooms.ts";
+import {
+  STREAM_SSE_HEADERS,
+  StreamForbidden,
+  StreamPlane,
+  resolveStreamColumns,
+  streamFramesToSse,
+  streamRequestFromHttp,
+} from "./streams.ts";
+import type {
+  OpenStreamInput,
+  RindleStreamOptions,
+  StreamHandle,
+  StreamSubscription,
+  StreamTables,
+  SubscribeStreamInput,
+} from "./streams.ts";
 // The room lease token (RINDLE-REALTIME §10.1): minted here, verified by the room SHELL against
 // its `downstream.tokenKeys` ring — the `/token` subpath is pure WebCrypto (no wasm, no shell).
 // Loaded LAZILY at the first mint: `@rindle/room` is an OPTIONAL dependency (see package.json), so
@@ -107,6 +123,40 @@ export { queryRealtimeLabel, queryResultToAst } from "./rooms.ts";
 export type { RoomProfile, RoomScopeSpec, RoomTableSpec } from "./rooms.ts";
 export type { RealtimeQueryLabel } from "@rindle/client";
 
+// The LM stream plane (designs/LM-STREAM-CHECKPOINT-DESIGN.md): a model response runs on two planes
+// — every delta straight to subscribers, one chunk row per coarse checkpoint to the app's tables —
+// joined by one monotone `seq`. The plane itself (`StreamPlane`) stays internal; the api-server owns
+// it and feeds it the backend's outside-transaction SQL surface (checkpoints are SYSTEM writes: no
+// clientID, no mid, no lmid).
+export {
+  STREAM_SSE_HEADERS,
+  STREAM_STATUS_STREAMING,
+  StreamOpenRefused,
+  assembleDurableText,
+  frameResumePoint,
+  spliceStreamText,
+  streamChunkId,
+  streamChunkTableDdl,
+  streamFramesToSse,
+  streamRequestFromHttp,
+} from "./streams.ts";
+export type {
+  AuthorizeStreamInput,
+  OpenStreamInput,
+  RindleStreamOptions,
+  StreamCheckpointPolicy,
+  StreamCheckpointTarget,
+  StreamColumns,
+  StreamCommit,
+  StreamCommitInput,
+  StreamFrame,
+  StreamHandle,
+  StreamStatus,
+  StreamSubscription,
+  StreamTables,
+  SubscribeStreamInput,
+} from "./streams.ts";
+
 export const DEFAULT_RINDLE_API_ROUTES = {
   query: "/api/rindle/query",
   read: "/api/rindle/read",
@@ -118,6 +168,9 @@ export const DEFAULT_RINDLE_API_ROUTES = {
   roomLmids: "/api/rindle/room-lmids",
   // The DO shell's cold-boot callback (§10.1) — active only when `realtime` is configured.
   roomBoot: "/api/rindle/room-boot",
+  // The LM stream subscribe leg (LM-STREAM-CHECKPOINT §4) — active only when `streams` is
+  // configured. GET + `EventSource` is the intended shape (`Last-Event-ID` IS the resume offset).
+  stream: "/api/rindle/stream",
 } as const;
 
 export type MaybePromise<T> = T | PromiseLike<T>;
@@ -170,7 +223,12 @@ export interface MutationContext<User> {
 export interface ServerSql {
   /** Queue/execute one statement. A transaction-bound call commits with the surrounding mutation. */
   execute(sql: string, params?: readonly WireValue[]): Promise<void>;
-  /** Queue/execute an ordered statement batch. An empty batch is a no-op. */
+  /** Queue/execute an ordered statement batch. An empty batch is a no-op. On an
+   *  outside-transaction surface ({@link MutationScope.sql}, `backend.outsideSql`) the batch MUST
+   *  execute as ONE atomic transaction — all statements or none. Every built-in backend does (the
+   *  daemon's `execute-sql-txn`, the sql-client's `/v1/sql/batch`, the Postgres plugger's
+   *  BEGIN/COMMIT); a custom backend that loops statements without a transaction silently breaks
+   *  the stream plane's chunk+CAS and compaction invariants, which ride single `batch` calls. */
   batch(statements: readonly SqlStatement[]): Promise<void>;
   /** Run a read and return rows keyed by their column names. */
   query<Row = Record<string, unknown>>(sql: string, params?: readonly WireValue[]): Promise<Row[]>;
@@ -261,8 +319,27 @@ export interface MutationScope {
    *
    *  A THROW from the body that is not a {@link BackendError} is a BUSINESS rejection: the data rolls
    *  back, `lmid` advances alone, and this method throws {@link MutationRejected} (so surrounding
-   *  code can compensate). A {@link BackendError} is INFRA: it propagates (the client retries). */
-  transact(run: (tx: ServerMutationTx) => void | Promise<void>): Promise<void>;
+   *  code can compensate). A {@link BackendError} is INFRA: it propagates (the client retries).
+   *
+   *  **The callback form RETURNS ITS BODY'S VALUE**, and only on the committed path — a rejection
+   *  throws, so there is never a value to act on for a transaction that rolled back. That is what
+   *  lets a post-commit effect be decided by a TRANSACTIONAL read instead of a second, racy one
+   *  afterwards:
+   *
+   *  ```ts
+   *  const kick = await scope.transact(async (tx) => {
+   *    const prior = await tx.row("message", { id: a.assistantMessageId });
+   *    if (prior) return undefined;                 // a replayed envelope — do NOT re-fire the effect
+   *    tx.insert("message", …);
+   *    return { streamId: a.assistantMessageId, history: await readHistory(tx, a.chatId) };
+   *  });
+   *  if (kick) void startGeneration(kick);          // committed, and decided against committed state
+   *  ```
+   *
+   *  A tx-form mutator cannot do this: its return value is already the logical-write channel
+   *  ({@link ApiMutatorResult}). A post-commit effect chosen by a transactional read is exactly what
+   *  the scoped form is for. */
+  transact<T>(run: (tx: ServerMutationTx) => T | Promise<T>): Promise<T>;
   transact<A, C extends MutatorCtx>(mutator: SharedMutator<A, C>, args: A, ctx: C): Promise<void>;
 }
 
@@ -534,6 +611,7 @@ export interface RindleApiRoutes {
   claimRoomEpoch: string;
   roomLmids: string;
   roomBoot: string;
+  stream: string;
 }
 
 /** A room-host reply the transport writes VERBATIM (`status` + JSON `body`): the
@@ -880,6 +958,11 @@ export interface RindleApiServerOptions<User> {
    *  Presence activates the room flush trio AND `/room-boot`; absence keeps every room
    *  endpoint 403. Takes precedence over the deprecated {@link authorizeRoom}. */
   realtime?: RindleRealtimeOptions<User>;
+  /** The LM stream plane (LM-STREAM-CHECKPOINT-DESIGN.md): the ONE named opt-in for streaming a
+   *  model response live while the durable store only ever sees coarse checkpoints. Presence
+   *  activates {@link RindleApiServer.openStream}/{@link RindleApiServer.subscribeStream} and
+   *  `/stream`; absence keeps them 403. */
+  streams?: RindleStreamOptions<User>;
   /** The room write-authority gate (§5.3.1): validates the caller is a placed room —
    *  the epoch-bound flush credential rides `context.request`, and what it means is
    *  the app's to define. The room endpoints are DISABLED (403) until this is set:
@@ -934,9 +1017,37 @@ export interface RindleApiServerOptions<User> {
 
 export interface RindleApiServer<User> {
   readonly routes: RindleApiRoutes;
-  /** Close the SQL client created from {@link RindleApiServerOptions.database}. Injected SQL
-   *  sessions and custom backends remain caller-owned. Idempotent. */
+  /** Close the SQL client created from {@link RindleApiServerOptions.database}, and drop every live
+   *  stream's readers and timers WITHOUT a durable write (that is {@link drainStreams}). Injected
+   *  SQL sessions and custom backends remain caller-owned. Idempotent. */
   close(): void;
+  /** Open an LM stream (LM-STREAM-CHECKPOINT §2): commits the durable POINTER row, then hands back
+   *  the producer handle. A resolved handle means the message already exists for every client's
+   *  query — so a subscriber that arrives before the first token has something to attach to.
+   *  Throws 403 unless {@link RindleApiServerOptions.streams} is configured. */
+  openStream(input: OpenStreamInput<User>): Promise<StreamHandle>;
+  /** Attach a reader at `from` — the same call serves a first-touch subscriber (`from: 0`), a late
+   *  joiner (`from` = the seq its IVM view shows), and a reconnect (`from` = `Last-Event-ID`).
+   *  Terminates with `end`, or with `stale`/`absent` when the client should fall back to the
+   *  durable plane (both are ordinary answers, never errors). */
+  subscribeStream(input: SubscribeStreamInput<User>): Promise<StreamSubscription>;
+  /** Parse a default `{streamId, from?}` subscribe body and run {@link subscribeStream}. For the
+   *  GET + `EventSource` shape, use {@link streamResponse} (or build the body with
+   *  `streamRequestFromHttp(request)` yourself). */
+  handleStreamJson(body: unknown, context: ApiContext<User>): Promise<StreamSubscription>;
+  /** The subscribe route in ONE call: parse a GET (`?streamId=…&from=…`, with `Last-Event-ID`
+   *  winning), authorize + subscribe, and encode the SSE response. A refusal comes back as a JSON
+   *  error `Response` (403 for denied or unconfigured) rather than a throw, so the route body is a
+   *  single expression after authentication. For custom transports, compose
+   *  `streamRequestFromHttp` + {@link subscribeStream} + `streamFramesToSse` instead. */
+  streamResponse(
+    request: { url: string; headers: { get(name: string): string | null } },
+    context: ApiContext<User> & { keepAliveMs?: number },
+  ): Promise<Response>;
+  /** Checkpoint every live stream's outstanding tail, then seal it `interrupted`
+   *  (LM-STREAM-CHECKPOINT §5). Wire it to SIGTERM: without it a rolling deploy drops each
+   *  response's un-checkpointed tail and strands rows saying `streaming` forever. */
+  drainStreams(): Promise<void>;
   createQueryLease(input: QueryLeaseRequest<User>): Promise<QueryLeaseResponse>;
   /** (Re-)materialize every `pinnedQueries` entry with a pinned policy. Idempotent — the daemon
    *  dedupes by canonical query, so a re-assert reuses the existing materialization. Call it at
@@ -2478,10 +2589,10 @@ class MutationScopeImpl implements MutationScope {
   }
 
   transact(
-    first: SharedMutator<any, any> | ((tx: ServerMutationTx) => void | Promise<void>),
+    first: SharedMutator<any, any> | ((tx: ServerMutationTx) => unknown),
     args?: unknown,
     ctx?: MutatorCtx,
-  ): Promise<void> {
+  ): Promise<any> {
     if (this.attempted) throw new Error("scope.transact may be called at most once per mutation");
     this.attempted = true;
     const promise = this.drive(first, args, ctx);
@@ -2496,17 +2607,20 @@ class MutationScopeImpl implements MutationScope {
   }
 
   private async drive(
-    first: SharedMutator<any, any> | ((tx: ServerMutationTx) => void | Promise<void>),
+    first: SharedMutator<any, any> | ((tx: ServerMutationTx) => unknown),
     args?: unknown,
     ctx?: MutatorCtx,
-  ): Promise<void> {
+  ): Promise<unknown> {
+    // The callback form's return value, captured INSIDE the transaction and handed back only below,
+    // after the commit is confirmed accepted — so a value can never describe work that rolled back.
+    let value: unknown;
     // A shared (generator) mutator is driven via the isomorphic seam; a plain callback gets the raw tx.
     const run = isGeneratorMutator(first)
       ? async (tx: ServerMutationTx) => {
           await runSharedMutation(first as SharedMutator<unknown, MutatorCtx>, args, ctx as MutatorCtx, tx);
         }
       : async (tx: ServerMutationTx) => {
-          await (first as (tx: ServerMutationTx) => void | Promise<void>)(tx);
+          value = await (first as (tx: ServerMutationTx) => unknown)(tx);
         };
     let outcome: MutationOutcome;
     try {
@@ -2518,6 +2632,7 @@ class MutationScopeImpl implements MutationScope {
     }
     this.outcome = outcome;
     if (!outcome.accepted) throw new MutationRejected(outcome.reason);
+    return value;
   }
 }
 
@@ -3305,14 +3420,87 @@ export function createRindleApiServer<User = unknown>(options: RindleApiServerOp
     throw e;
   };
 
+  // The LM stream plane (LM-STREAM-CHECKPOINT §2). Checkpoints are SYSTEM writes — no clientID, no
+  // mid, no `lmid` advance (that exists to release a CLIENT's optimistic rebase point, and a
+  // server-authored checkpoint has no prediction to release) — so they ride the backend's
+  // outside-transaction SQL surface, whose `batch` is one transaction on every backend. CDC → IVM
+  // fanout happens on any write; it never needed an envelope.
+  if (opts.streams && "tables" in opts.streams.checkpoint) {
+    assertStreamTables(opts.streams.checkpoint.tables, opts.schema);
+  }
+  const streamPlane = opts.streams
+    ? new StreamPlane<User>(
+        opts.streams,
+        backend.outsideSql ? { dialect: backend.dialect, sql: backend.outsideSql } : undefined,
+      )
+    : undefined;
+  const streams = (): StreamPlane<User> => {
+    if (!streamPlane) throw new RindleApiError("forbidden", "streams not configured", 403);
+    return streamPlane;
+  };
+  // The plane's own refusal, translated at the seam (it stays free of the server's error type so
+  // `streams.ts` can be imported without the server — no cycle).
+  const streamForbidden = (e: unknown): never => {
+    if (e instanceof StreamForbidden) throw new RindleApiError("forbidden", "rindle request forbidden", 403);
+    throw e;
+  };
+
   return {
     routes,
-    close: () => ownedSql?.close(),
+    close: () => {
+      streamPlane?.closeSync();
+      ownedSql?.close();
+    },
     createQueryLease,
     readQuery,
     assertPins,
     pushMutation,
     pushMutations,
+    // `async` throughout so a misconfiguration surfaces as a REJECTION like every other refusal on
+    // this interface, never as a synchronous throw the transport forgot to catch.
+    openStream: async (input) => streams().open(input),
+    subscribeStream: async (input) => streams().subscribe(input).catch(streamForbidden),
+    drainStreams: async () => streamPlane?.drainStreams(),
+    handleStreamJson: async (body, context) => {
+      const msg = parseObject(body, "stream request");
+      const from = msg.from === undefined ? undefined : parseNumber(msg.from, "from");
+      // A non-negative INTEGER, like the GET leg's clamp: a fractional `from` would yield a replay
+      // chunk whose `text.length !== seq - from`, breaking the frame invariant on the client.
+      if (from !== undefined && (!Number.isInteger(from) || from < 0)) {
+        throw new RindleApiError("bad-request", "invalid from", 400);
+      }
+      return streams()
+        .subscribe({
+          user: context.user,
+          streamId: parseString(msg.streamId, "streamId"),
+          ...(from !== undefined ? { from } : {}),
+          request: context.request,
+        })
+        .catch(streamForbidden);
+    },
+    streamResponse: async (request, context) => {
+      try {
+        const { streamId, from } = streamRequestFromHttp(request);
+        const sub = await streams()
+          .subscribe({ user: context.user, streamId, from, request: context.request ?? request })
+          .catch(streamForbidden);
+        const sse = streamFramesToSse(
+          sub,
+          context.keepAliveMs !== undefined ? { keepAliveMs: context.keepAliveMs } : undefined,
+        );
+        return new Response(sse, { headers: STREAM_SSE_HEADERS });
+      } catch (e) {
+        // The route helper OWNS the transport, so refusals become responses here rather than
+        // throws the route forgot to catch. The generic body never reveals stream existence.
+        if (e instanceof RindleApiError) {
+          return new Response(JSON.stringify({ error: e.message }), {
+            status: e.status,
+            headers: { "content-type": "application/json" },
+          });
+        }
+        throw e;
+      }
+    },
     handleApplyRowChangeTxnJson: async (body, context) => {
       await roomGate(context);
       const msg = parseObject(body, "row-change txn");
@@ -3507,6 +3695,55 @@ function applyResultToTx(result: ApiMutatorResult, tx: ServerMutationTx): void {
   if (!Array.isArray(result) && result.idempotencyKey !== undefined) {
     (tx as { idempotencyKey?: string }).idempotencyKey = result.idempotencyKey;
   }
+}
+
+/**
+ * The stream table mapping, checked LOUDLY at construction (the room-profile rule — a misconfigured
+ * mapping should fail the deploy, not a 3am generation). Only checkable when a `schema` is
+ * configured; without one the plane's SQL fails at the first checkpoint like any other unschema'd
+ * write. The message table is the APP's, so only the three-to-five columns the plane touches are
+ * asserted — never its shape.
+ */
+function assertStreamTables(tables: StreamTables, schema: Schema | undefined): void {
+  if (!schema) return;
+  const c = resolveStreamColumns(tables.columns);
+  const columnsOf = (table: string): Set<string> | undefined => {
+    const meta = (schema.tables as Record<string, { columns?: Record<string, unknown> }> | undefined)?.[table];
+    return meta?.columns ? new Set(Object.keys(meta.columns)) : undefined;
+  };
+  const check = (table: string, needed: Array<[string, string]>): void => {
+    const cols = columnsOf(table);
+    if (!cols) {
+      throw new TypeError(
+        `streams.checkpoint.tables names "${table}", which is not in the configured schema — add it (and run its ` +
+          `migration; \`streamChunkTableDdl\` generates the chunk table's DDL)`,
+      );
+    }
+    for (const [role, name] of needed) {
+      if (!cols.has(name)) {
+        throw new TypeError(
+          `streams.checkpoint.tables: "${table}" has no column "${name}" (the ${role} column) — ` +
+            `add it, or point \`columns.${role}\` at the one you have. Known columns: ${[...cols].join(", ")}`,
+        );
+      }
+    }
+  };
+  check(tables.message, [
+    ["key", c.key],
+    ["body", c.body],
+    ["status", c.status],
+    ["seq", c.seq],
+    // `cancel`/`error`/`host` are opt-in BY NAMING — present here only when the app asked for them.
+    ...(c.cancel !== undefined ? ([["cancel", c.cancel]] as Array<[string, string]>) : []),
+    ...(c.error !== undefined ? ([["error", c.error]] as Array<[string, string]>) : []),
+    ...(c.host !== undefined ? ([["host", c.host]] as Array<[string, string]>) : []),
+  ]);
+  check(tables.chunks, [
+    ["chunkKey", c.chunkKey],
+    ["chunkStream", c.chunkStream],
+    ["chunkSeq", c.chunkSeq],
+    ["chunkText", c.chunkText],
+  ]);
 }
 
 async function assertAuthorized<T>(authorizer: Authorizer<T> | undefined, input: T): Promise<void> {

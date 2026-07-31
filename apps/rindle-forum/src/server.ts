@@ -26,10 +26,15 @@ const ROUTES = DEFAULT_RINDLE_API_ROUTES;
 /** The Start SSR handler — server-renders the matched route to a stream. */
 export const ssrHandler = createStartHandler(defaultStreamHandler);
 
-const DEFAULT_DAEMON = resolveForumDaemon(process.env, {
-  daemonUrl: process.env.DAEMON_ORIGIN ?? "http://127.0.0.1:7600",
-  daemonToken: process.env.DAEMON_TOKEN ?? "dev-daemon-token",
-});
+// The node host's daemon wiring, resolved on FIRST USE rather than at module scope: `worker.ts`
+// imports this module, and on Cloudflare there is no `process` to read — the Worker passes `cfg`
+// from its own `env` bindings instead, so it must never pay for this resolution. (`DAEMON_ORIGIN`,
+// the Worker's spelling of the follower URL, is read inside the resolver.)
+let defaultDaemonMemo: ReturnType<typeof resolveForumDaemon> | undefined;
+const defaultDaemon = (): ReturnType<typeof resolveForumDaemon> =>
+  (defaultDaemonMemo ??= resolveForumDaemon(process.env, {
+    daemonToken: process.env.DAEMON_TOKEN ?? "dev-daemon-token",
+  }));
 
 // The identity provider, chosen once from the environment (dev header vs. headwaters OIDC, §3.3). The
 // Worker passes its own provider through `cfg.auth` since it reads config off `env`, not process.env.
@@ -51,7 +56,7 @@ export async function handleApi(
     /** The `rindle-replicator` write-master: writes route here, reads stay on the follower (§214). */
     writeDaemon: ForumDaemonTarget;
     auth?: AuthProvider;
-  } = DEFAULT_DAEMON,
+  } = defaultDaemon(),
 ): Promise<Response> {
   if (!cfg.daemonUrl || !cfg.daemonToken || !cfg.writeDaemon?.url) {
     return json({ error: "follower and replicator origins/tokens are not configured" }, 503);

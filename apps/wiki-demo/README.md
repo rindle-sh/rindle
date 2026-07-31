@@ -90,9 +90,12 @@ then starts the Node tier. A container build uses the same path with `RINDLE_REP
   source, daemonWsUrl, offset }`). `editsInWindow` is the live working set the boards run over (the
   scale ticker); `materializations` holds the three pinned board pipelines (shared by every tab —
   that's the dedup) plus a tiny per-client bookkeeping query.
-- **follower:** read/control plane `http://127.0.0.1:7600`, public subscription ws
-  `ws://127.0.0.1:7601`.
-- **master:** write ingress `http://127.0.0.1:7611`; its fan-out `:7610` stays internal to the pair.
+- **follower:** read/control plane at `portBase+0`, public subscription ws at `portBase+1`.
+- **master:** write ingress at `portBase+11`; its fan-out (`portBase+10`) stays internal to the pair.
+- **ports:** allocated per project (a 100-wide block remembered in `~/.rindle/ports.json`) so this
+  demo can run alongside other Rindle projects. `rindle up` prints the resolved URLs and
+  `rindle.json`'s `bindings` carries them; pin `portBase` in `rindle.ncl` for a fixed block. The
+  legacy block is `portBase = 7600`, which reproduces the numbers this doc used to quote.
 - **auth:** `WIKI_DAEMON_TOKEN` (follower) and `WIKI_WRITE_TOKEN` (master); omit both for open
   loopback development.
 

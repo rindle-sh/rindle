@@ -17,11 +17,12 @@ import { HttpRindleDaemonClient } from "@rindle/daemon-client";
 import type { FetchLike, SqlStatement } from "@rindle/daemon-client";
 
 import { SEED_COUNT, seedStatements } from "./seed.ts";
+import { requiredEnv } from "./app-api.ts";
 
-const WRITE_URL =
-  process.env.RINDLE_REPLICATOR_URL ??
-  process.env.REPLICATOR_ORIGIN ??
-  "http://127.0.0.1:7611";
+// Resolved when `reset()` RUNS, not at module load: `worker.ts` imports this module and on
+// Cloudflare there is no `process` to read — the Worker passes `url` explicitly from its `env`
+// bindings. Resolving eagerly would throw at Worker startup.
+const writeUrl = (): string => requiredEnv("RINDLE_REPLICATOR_URL", "REPLICATOR_ORIGIN");
 const WRITE_TOKEN =
   process.env.RINDLE_REPLICATOR_TOKEN ??
   process.env.WRITE_TOKEN ??
@@ -42,7 +43,7 @@ export interface ResetResult {
 }
 
 export async function reset({
-  url = WRITE_URL,
+  url = writeUrl(),
   token = WRITE_TOKEN,
   count = SEED_COUNT,
   fetch,

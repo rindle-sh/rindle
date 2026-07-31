@@ -2473,9 +2473,12 @@ impl Graph {
     }
 
     pub fn try_source_push(&self, src_id: NodeId, change: SourceChange) -> Result<(), RindleError> {
-        // Time the whole write-path push (the headline latency, 208.2) — one timer per
-        // call, dropped on every return path; no-op with `metrics` off.
-        let _timer = metric_timer!(source_push);
+        // NOT timed here. The apply path pushes a batch's rows one at a time, so a
+        // per-call timer was a per-ROW clock pair (~15ns each) whose samples all landed in
+        // the histogram's first bucket anyway. Latency is measured per BATCH by the caller
+        // that knows its own batch boundary — see `rindle::metrics::ApplyBatch`. The
+        // per-change counter below stays: it is one relaxed add with no clock read, and it
+        // is what keeps mean per-row cost recoverable from the batch histogram.
         let s = self.source(src_id);
         let strict = self.validate_changes.get();
         // Classify before `change` is moved into the push (compiled out when the

@@ -64,6 +64,60 @@ const serverMutators = defineApiMutators({
 });
 ```
 
+## Streaming a model response
+
+A language-model response wants to be on the screen token by token and in the store only at coarse
+boundaries. `streams` splits it into two planes joined by one monotone `seq` (characters of the
+response): every delta goes straight to subscribers, while the store accumulates **one chunk row per
+checkpoint** — every ~512 characters, on every explicit `flush()`, and at close, where the closing
+write folds the chunks into the message body. Full rationale, frame table, and failure modes:
+`designs/LM-STREAM-CHECKPOINT-DESIGN.md`.
+
+You author both tables — the message row is yours (it carries `chatId`, `role`, the model name), and
+the chunk table is generated for your migration by `streamChunkTableDdl()`. The plane is just told
+where things live, and validates the mapping at construction:
+
+```ts
+const api = createRindleApiServer({
+  /* …as above… */
+  streams: {
+    checkpoint: {
+      tables: { message: "message", chunks: "message_chunk", columns: { cancel: "cancelRequested" } },
+    },
+    authorize: ({ user, streamId }) => canReadMessage(user, streamId),
+  },
+});
+
+// The producer: your route handler, running the model call. The message row already exists — your
+// own mutator wrote it alongside the user's prompt — so every client's chat query already shows it.
+const s = await api.openStream({ user, streamId: messageId });
+await s.pump(textDeltasOf(anthropic.messages.stream(params)));  // any AsyncIterable<string>
+await s.close();
+
+// The subscriber: one call serves first-touch, late-joining, and reconnecting clients alike —
+// it parses the GET (`Last-Event-ID` included), authorizes, and encodes the SSE response.
+GET: async ({ request }) => api.streamResponse(request, { user: await authenticate(request) });
+// (For custom transports, compose streamRequestFromHttp → subscribeStream → streamFramesToSse.)
+```
+
+Checkpoints are **system writes** — no `clientID`, no `mid`, no `lmid` advance (that exists to release
+a *client's* optimistic rebase point, and a server-authored checkpoint has no prediction to release).
+Idempotency comes from the statements themselves: the chunk id is deterministic, and the message row's
+length column is compare-and-swapped, so a replayed checkpoint is a no-op.
+
+On the client, assemble the durable text with `assembleDurableText(message, message.chunks)` and merge
+it with the live tail by taking the longer prefix (`spliceStreamText`).
+
+**Cancellation** rides the same round-trip: the reader sets the mapped `cancel` column with an
+ordinary mutation from wherever it is, the producer reads the flag on its next checkpoint, `pump()`
+stops (aborting the upstream request), and `close()` seals `cancelled`. No routing to the hosting
+instance, no subscription per generation.
+
+Losing the live plane costs latency, never consistency: a subscriber on another instance (or with no
+stream at all) gets an `absent` frame and still watches the message grow through its ordinary query,
+at checkpoint granularity. Wire `api.drainStreams()` to `SIGTERM` so a rolling deploy compacts each
+response's outstanding tail instead of stranding rows that say `streaming` forever.
+
 `scope.sql` is deliberately outside the mutator transaction: its calls commit independently and can
 repeat when an envelope is retried, so outside writes need their own unique/idempotency key. Call
 `api.close()` during shutdown to abort work on the internally-created SQL client. Import

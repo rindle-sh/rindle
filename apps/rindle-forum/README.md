@@ -68,11 +68,18 @@ pnpm --filter @rindle/example-forum dev:oidc   # ALSO boots headwaters; real "Si
 
 `pnpm dev` (`server/dev.ts`) is one command: it builds `rindle` + `rindled` + `rindle-replicator`,
 then runs the database tier as `rindle up --migrate --gen --watch` over `rindle.ncl` — supervising
-the one-topology fleet (the **write-master** on `:7611`, the private **read-follower** on `:7600` /
-`:7601`, and the stable app-facing fleet edge on `:7650`), applying schema migrations through the
-master's `/migrate` (they replicate to the follower), and regenerating `shared/schema.gen.ts` off the follower's `/schema` on boot and on
-every `migrations/` change — then starts the API server (`:7700`, reads through `:7650` / writes to
-`:7611`), runs the idempotent seed **against the master**, and runs Vite against the same fleet edge.
+the one-topology fleet (a **write-master**, a private **read-follower**, and the stable app-facing
+**fleet edge**), applying schema migrations through the master's `/migrate` (they replicate to the
+follower), and regenerating `shared/schema.gen.ts` off the follower's `/schema` on boot and on
+every `migrations/` change — then starts the API server (`:7700`), which reads through the fleet
+edge and writes to the master, runs the idempotent seed **against the master**, and runs Vite
+against the same fleet edge.
+
+The fleet's ports are allocated **per project** (a 100-wide block remembered in
+`~/.rindle/ports.json`), so this app and any other Rindle project can run at the same time without
+colliding. `rindle up` prints the resolved URLs; `rindle.json`'s `bindings` carries them, and the
+dev harness reads them from there rather than hardcoding numbers. Pin `portBase` in `rindle.ncl` if
+you want a fixed block.
 Open two windows to watch writes sync live. Switch the dev user and post as someone else; try a title containing "spam" to see
 the rejection path. (Editing the schema? Add or change a `migrations/*.sql` and `--watch` re-applies it
 and regenerates `shared/schema.gen.ts` automatically; `pnpm migrate` remains for manual/CI runs.)

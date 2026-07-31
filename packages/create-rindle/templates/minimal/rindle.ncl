@@ -9,7 +9,7 @@
 #
 #   rindle login                  # once — authenticate to Rindle Cloud
 #   rindle deploy                 # provision / re-attach the managed app (writes .rindle/cloud.json)
-#   rindle migrate apply --remote # push migrations/*.sql to the deployed write-master
+#   rindle migrate apply --cloud  # push migrations/*.sql to the deployed write-master
 #
 # `app` becomes the cloud display name and groups every component under one app in `rindle ps`.
 # `followers = 1` maps to the cloud `replicated` rung (a separate write-master + one follower,

@@ -13,7 +13,9 @@ the schema subset: [rindle.sh/docs/schema](https://rindle.sh/docs/schema) · for
 import { createSqlClient } from "@rindle/sql-client";
 
 const sql = createSqlClient({
-  url: process.env.RINDLE_REPLICATOR_URL ?? "http://127.0.0.1:7611",
+  // `rindle dev` / `rindle exec` inject this. Don't hardcode a local port: each project gets its
+  // own block, so the write-master's URL differs per checkout.
+  url: process.env.RINDLE_REPLICATOR_URL!,
   authToken: process.env.RINDLE_DATABASE_TOKEN!,
 });
 
@@ -42,7 +44,7 @@ commits:
 ```ts
 const api = createRindleApiServer({
   daemon, // named queries, materializations, and rooms
-  database: { url: process.env.RINDLE_REPLICATOR_URL ?? "http://127.0.0.1:7611", authToken: process.env.RINDLE_DATABASE_TOKEN! },
+  database: { url: process.env.RINDLE_REPLICATOR_URL!, authToken: process.env.RINDLE_DATABASE_TOKEN! },
   schema,
   queries,
   mutators,

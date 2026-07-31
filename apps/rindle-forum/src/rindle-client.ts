@@ -62,6 +62,21 @@ export function onRejection(handler: RejectionHandler): () => void {
  *  src/RindleApp.tsx gates the whole tree on it). */
 export let app: RindleApp;
 
+/** The fleet edge's ws URL. No fixed-port fallback: the local fleet's ports are allocated PER
+ *  PROJECT, so `ws://127.0.0.1:7650` is no longer this app's edge — it may well be a DIFFERENT
+ *  project's, and the browser leg carries no project identity to be fenced on. `pnpm dev` sets
+ *  `VITE_FLEET_WS` from the rendered rindle.json bindings; a deploy sets it at build time. */
+function fleetWs(): string {
+  const url = import.meta.env.VITE_FLEET_WS;
+  if (!url) {
+    throw new Error(
+      "VITE_FLEET_WS is not set — run the app through `pnpm dev`, which injects the fleet edge URL " +
+        "from rindle.json (`rindle render` prints it).",
+    );
+  }
+  return url;
+}
+
 /** Dynamically imports the wasm engine + optimistic glue (so the SSR/prerender shell never evaluates
  *  them) and constructs the optimistic client. */
 async function bootClientInner() {
@@ -86,7 +101,7 @@ async function bootClientInner() {
     // test/debug bypass only.
     daemon: import.meta.env.VITE_DAEMON_WS
       ? { wsUrl: import.meta.env.VITE_DAEMON_WS }
-      : { wsUrl: import.meta.env.VITE_FLEET_WS ?? "ws://127.0.0.1:7650", affinity: true },
+      : { wsUrl: fleetWs(), affinity: true },
     dev: { resetOnMutationGap: import.meta.env.DEV },
     onRejected: (envelope, reason) => rejectionHandler(envelope, reason),
   });

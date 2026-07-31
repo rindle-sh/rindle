@@ -154,6 +154,56 @@ When a whole component *tree* needs data, don't give each component its own
 `useRoot`, and let descendants read opaque refs with `useFragment`. See
 [Compose the UI with fragments](https://rindle.sh/docs/fragments).
 
+#### Typeahead: opt out of the warm window
+
+When the last component reading a query unmounts, the view and its server
+subscription are kept warm for **2 seconds** rather than dropped immediately. That
+grace window is what stops navigation from flashing empty: change a filter or a
+limit and the replacement re-materializes from the still-warm local base while its
+server lease streams the first answer.
+
+It's the wrong default for a query you know you'll never return to. Typeahead is
+the canonical case — `sea`, `sear`, `searc`, `search` are four *different* queries,
+so a 2s window leaves one dead view and one open subscription per character typed.
+Pass `releaseDelayMs: 0` to tear down on unmount:
+
+```tsx
+function SearchResults({ term }: { term: string }) {
+  const rows = useQuery(searchIssues({ term }), { releaseDelayMs: 0 });
+  return <ul>{rows.map((r) => <li key={r.id}>{r.title}</li>)}</ul>;
+}
+```
+
+The option is available on `useQuery`, `useQueryStatus`, `useSyncQuery`,
+`useFragment`, and `<Frag releaseDelayMs={0}>`. `useRoot` takes the tree default —
+its argument list is variadic (`query, args, ...ctx, fragment`), so a trailing
+options object would be ambiguous.
+
+To move the default for a whole tree, set it on the provider — treat it as a
+constant, since changing it rebuilds the caches and tears down every live view:
+
+```tsx
+<Rindle store={app.store} releaseDelayMs={0}>
+```
+
+For a query several components share with different delays, the window is a
+**deadline, not a duration**: every unmount stamps `now + that component's delay`,
+and the query stays warm until the latest deadline any of its readers asked for.
+Two things follow, both of them what you'd want:
+
+- **The clock starts when a reader leaves, never when it arrives.** A component
+  that stays mounted for an hour is never timed out, and when it does unmount it
+  gets its full window from that moment.
+- **A deadline expires on its own**, so a later reader inherits at most what is
+  *left* of an older window, never a fresh copy of it. Unmount a 2s reader, remount
+  a `releaseDelayMs: 0` one 1.9s later and drop it: teardown lands at the original
+  2s mark, not 1.9s past it.
+
+So `releaseDelayMs: 0` means "I'm asking for no window of my own" rather than "tear
+down now regardless" — a still-unexpired deadline from a component sharing the same
+query still applies. For the typeahead case that distinction never arises, because
+every keystroke is a distinct query with no shared history.
+
 ### Without React
 
 `app.store.materialize(query)` returns an `ArrayView` whose `.data` is the current

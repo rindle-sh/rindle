@@ -71,3 +71,31 @@ runtime dependency of these base React bindings.
 - `queryCacheKey(query)` — the stable string key (`@rindle/client`'s `stableKey(ast)`) under which
   the cache stores that view. Same AST → same key → one shared entry, and it matches the SSR seed
   key so hydration finds the dehydrated view. Keys the view (bare AST), not the lease.
+
+## Streaming an LM response
+
+`useStreamedText({ streamId, durable, live })` renders a language-model response that is arriving on
+two planes: the checkpointed prefix through your ordinary query, and the not-yet-checkpointed tail
+over SSE. It returns the merged text.
+
+```tsx
+const data = useFragment(MessageFragment, message);
+const streaming = data.status === "streaming" || data.status === "pending";
+const text = useStreamedText({
+  streamId: data.id,
+  durable: assembleDurableText(data, data.chunks),   // body ++ the un-compacted chunk rows
+  live: streaming,
+});
+```
+
+`durable` is a string, not the row, because the column names belong to your schema — the hook never
+guesses where `body` lives. It handles the parts that are easy to get wrong: not reconnecting when the
+durable text advances, seeding the tail with the offset it joined at, closing its own `EventSource` on
+a terminal frame (`EventSource` reconnects on *any* close), keying the tail to its stream so
+switching messages can't show the previous one's text, and splicing a resumed replay at its own
+offset so an `EventSource` reconnect (which can rewind behind the tail) never duplicates text. Losing the live leg is not an error — without
+`EventSource`, or on the wrong server instance, the text still advances through the query at
+checkpoint granularity.
+
+`StreamTransport` is injectable for WebSocket, a fetch stream, or a test. Server side:
+**[`@rindle/api-server`](https://rindle.sh/docs/api-server)** (`openStream` / `subscribeStream`).

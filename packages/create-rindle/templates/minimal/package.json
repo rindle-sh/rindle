@@ -14,7 +14,7 @@
     "preview": "vite preview",
     "migrate": "rindle migrate apply --dir migrations",
     "rindle:deploy": "rindle deploy",
-    "rindle:migrate:remote": "rindle migrate apply --remote",
+    "rindle:migrate:cloud": "rindle migrate apply --cloud",
     "typecheck": "tsr generate && tsc --noEmit"
   },
   "dependencies": {

@@ -62,7 +62,7 @@ interface EnsureEntry {
   lastUsedAt: number;
 }
 
-const DEFAULT_RELEASE_DELAY_MS = 30_000;
+const DEFAULT_RELEASE_DELAY_MS = 10_000;
 const DEFAULT_MAX_ENTRIES = 32;
 
 /**

@@ -199,9 +199,16 @@ export function createForumApi(opts: ForumApiOptions): RindleApiServer<User> {
  *  write plane. */
 export function resolveForumDaemon(
   env: Record<string, string | undefined>,
-  defaults: { daemonUrl: string; daemonToken: string },
+  defaults: { daemonToken: string },
 ): Pick<ForumApiOptions, "daemonUrl" | "daemonToken" | "writeDaemon" | "databaseToken"> {
-  const daemonUrl = env.RINDLE_DAEMON_URL ?? env.RINDLE_FOLLOWER_URL ?? defaults.daemonUrl;
+  const daemonUrl = env.RINDLE_DAEMON_URL ?? env.RINDLE_FOLLOWER_URL ?? env.DAEMON_ORIGIN;
+  if (!daemonUrl) {
+    throw new Error(
+      "RINDLE_DAEMON_URL is required: the local fleet's ports are allocated PER PROJECT, so there " +
+        "is no fixed port to fall back to. `pnpm dev` injects it from the rendered rindle.json " +
+        "bindings; `rindle render` prints the resolved URLs.",
+    );
+  }
   const daemonToken = env.RINDLE_DAEMON_TOKEN ?? defaults.daemonToken;
   const writeUrl = env.RINDLE_REPLICATOR_URL;
   if (!writeUrl) {

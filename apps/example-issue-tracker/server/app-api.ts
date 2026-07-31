@@ -215,6 +215,24 @@ function fromEnv(name: string): string | undefined {
   return typeof process !== "undefined" ? process.env?.[name] : undefined;
 }
 
+/** The first of `names` that is set, or a throw naming all of them.
+ *
+ *  There is deliberately NO fixed-port fallback anywhere in this app. The local fleet's ports are
+ *  allocated per project, so `http://127.0.0.1:7600` is no longer "the daemon" — it is whatever
+ *  other Rindle project happens to hold that port, and a silent default would read its data. `pnpm
+ *  dev` injects every one of these from the rendered `rindle.json` bindings; `rindle render` prints
+ *  the resolved URLs. */
+export function requiredEnv(...names: string[]): string {
+  for (const name of names) {
+    const value = fromEnv(name);
+    if (value) return value;
+  }
+  throw new Error(
+    `${names.join(" or ")} is required — the fleet's ports are allocated per project, so there is ` +
+      "no local port to fall back to. Run through `pnpm dev`, or take the URL from rindle.json's bindings.",
+  );
+}
+
 let configuredIssueApi: IssueApiOptions | undefined;
 
 /** Install host-provided daemon config for environments where bindings do not live on process.env
@@ -227,7 +245,7 @@ export function configureIssueApi(opts: IssueApiOptions): void {
 export function createIssueApiFromEnv(): RindleApiServer<User> {
   return createIssueApi(
     configuredIssueApi ?? {
-      daemonUrl: fromEnv("RINDLE_DAEMON_URL") ?? fromEnv("DAEMON_ORIGIN") ?? "http://127.0.0.1:7600",
+      daemonUrl: requiredEnv("RINDLE_DAEMON_URL", "DAEMON_ORIGIN"),
       daemonToken: fromEnv("RINDLE_DAEMON_TOKEN") ?? fromEnv("DAEMON_TOKEN") ?? "dev-daemon-token",
       replicatorUrl: fromEnv("RINDLE_REPLICATOR_URL") ?? fromEnv("REPLICATOR_ORIGIN"),
       replicatorToken: fromEnv("RINDLE_REPLICATOR_TOKEN") ?? fromEnv("WRITE_TOKEN"),

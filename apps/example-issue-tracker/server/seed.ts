@@ -11,11 +11,12 @@ import { HttpRindleDaemonClient } from "@rindle/daemon-client";
 import type { SqlStatement, WireValue } from "@rindle/daemon-client";
 
 import { ISSUE_PRIORITIES, ISSUE_STATUSES } from "../shared/app-def.ts";
+import { requiredEnv } from "./app-api.ts";
 
-const WRITE_URL =
-  process.env.RINDLE_REPLICATOR_URL ??
-  process.env.REPLICATOR_ORIGIN ??
-  "http://127.0.0.1:7611";
+// Resolved when `seed()` RUNS, not when this module loads: seven e2e tests import `seedStatements`
+// from here purely for the SQL, and several of them set the environment after the import has been
+// hoisted. Only the code that actually writes needs a write-master URL.
+const writeUrl = (): string => requiredEnv("RINDLE_REPLICATOR_URL", "REPLICATOR_ORIGIN");
 const WRITE_TOKEN =
   process.env.RINDLE_REPLICATOR_TOKEN ??
   process.env.WRITE_TOKEN ??
@@ -132,7 +133,7 @@ export interface SeedOptions {
 }
 
 export async function seed({
-  url = WRITE_URL,
+  url = writeUrl(),
   token = WRITE_TOKEN,
   count = SEED_COUNT,
 }: SeedOptions = {}): Promise<void> {

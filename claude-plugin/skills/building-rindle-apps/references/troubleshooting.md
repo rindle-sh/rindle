@@ -157,6 +157,36 @@ Application code uses the same values with `createSqlClient({ url, authToken })`
 `404` for `/v1/sql` usually means `RINDLE_URL` points at a follower/control endpoint
 instead of the unified edge.
 
+## `ECONNREFUSED` on `:7600` / `:7611` / `:7650` after upgrading
+
+Local ports are no longer fixed. Each project gets its own 100-wide block, chosen from
+the path of the directory holding `rindle.ncl`, so several Rindle projects — or several
+git worktrees of one project — can run at the same time. `:7600` and friends are simply
+not your fleet's ports any more. See
+[Running several projects at once](https://rindle.sh/docs/rindle-cli#running-several-projects-at-once).
+
+Take the URLs from the environment `rindle dev` injects, or from `rindle.json`'s
+`bindings` — never a literal:
+
+```ts
+// not: process.env.RINDLE_DAEMON_URL ?? "http://127.0.0.1:7600"
+const daemonUrl = process.env.RINDLE_DAEMON_URL;
+if (!daemonUrl) throw new Error("RINDLE_DAEMON_URL is required");
+```
+
+A hardcoded fallback is worse than a crash here: if another Rindle project happens to
+hold that port, the read **succeeds** against the wrong database. The CLI and the
+daemons fence themselves against that with a project fingerprint, but a browser or an
+app-tier HTTP client sends no identity and cannot be fenced.
+
+To keep the old numbers instead, pin the block in `rindle.ncl`:
+
+```nickel
+{ portBase = 7600 }
+```
+
+`rindle render` prints the resolved URLs for whichever block you end up on.
+
 ## Performance: subscribing to too much
 
 Subscribe to **windows**, not whole tables — `orderBy` + `limit`, and ratchet the

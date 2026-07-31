@@ -24,7 +24,7 @@ Rindle docs are served as raw markdown for LLMs: index at
 - `pnpm migrate` — one-shot `rindle migrate apply` against the unified ingress derived
   from `rindle.ncl` (the follower's `/migrate` is write-fenced). The dev loop already
   applies on boot + on every `migrations/` change.
-- `pnpm rindle:deploy` / `pnpm rindle:migrate:remote` — deploy the data tier to
+- `pnpm rindle:deploy` / `pnpm rindle:migrate:cloud` — deploy the data tier to
   Rindle Cloud (reads `rindle.ncl`, the same file `rindle up` runs locally; run
   `rindle login` once first) and push `migrations/*.sql` to the deployed master.
 

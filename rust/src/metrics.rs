@@ -149,14 +149,40 @@ mod imp {
         "0.05", "0.1", "0.25", "0.5", "1", "2.5", "5", "+Inf",
     ];
 
+    /// Bounds for histograms that count **rows**, not time — today just the apply-batch
+    /// size. A separate table because the µs bounds above start at 50µs, which would put
+    /// every realistic batch in one bucket.
+    ///
+    /// Deliberately dense at the bottom: the interesting question for an app is "are my
+    /// normal writes 1 row or 20?", and the answer lives between 1 and 64.
+    ///
+    /// The top bound is **1024 on purpose** — it is `rindle-replica`'s `PUSH_CHUNK_ROWS`,
+    /// the size at which the coordinator cuts a transaction into apply batches, so 1024 is
+    /// the largest value this histogram can observe on the production path. Bounds beyond
+    /// it would be dead buckets that read like headroom. `+Inf` is therefore not slack but
+    /// a **signal**: anything landing there means an unchunked caller appeared and the cap
+    /// assumption behind this table no longer holds. See [`ApplyBatch`].
+    pub const ROW_BUCKET_BOUNDS: [u64; N_BUCKETS - 1] = [
+        1, 2, 3, 4, 6, 8, 12, 16, 24, 32, 48, 64, 128, 256, 512, 1024,
+    ];
+
+    /// The `le` label for each [`ROW_BUCKET_BOUNDS`] entry. Kept beside it so the two
+    /// cannot drift, exactly like [`BUCKET_LE_SECONDS`].
+    pub const ROW_BUCKET_LE: [&str; N_BUCKETS] = [
+        "1", "2", "3", "4", "6", "8", "12", "16", "24", "32", "48", "64", "128", "256", "512",
+        "1024", "+Inf",
+    ];
+
     /// A Prometheus-shaped histogram over [`BUCKET_BOUNDS_MICROS`], in microseconds.
     /// All lock-free: `observe` is one linear scan (≤ `N_BUCKETS` compares) + three
     /// relaxed adds. Per-bucket counts are **not** cumulative — the renderer sums them
     /// cumulatively at scrape time.
     pub struct Histogram {
         buckets: [AtomicU64; N_BUCKETS],
-        /// Σ observed µs → rendered as `_sum` seconds (`/ 1e6`). Integer, so no float atomic.
-        sum_micros: AtomicU64,
+        /// Σ observed values → `_sum`, in whatever unit was observed: µs for a latency
+        /// histogram (the renderer divides by 1e6), raw rows for a count histogram.
+        /// Integer either way, so no float atomic.
+        sum: AtomicU64,
         /// Total observations → `_count`.
         count: AtomicU64,
     }
@@ -165,7 +191,7 @@ mod imp {
         pub const fn new() -> Self {
             Histogram {
                 buckets: [const { AtomicU64::new(0) }; N_BUCKETS],
-                sum_micros: AtomicU64::new(0),
+                sum: AtomicU64::new(0),
                 count: AtomicU64::new(0),
             }
         }
@@ -175,12 +201,20 @@ mod imp {
         /// the `+Inf` slot.
         #[inline]
         pub fn observe(&self, micros: u64) {
-            let idx = BUCKET_BOUNDS_MICROS
+            self.observe_in(micros, &BUCKET_BOUNDS_MICROS);
+        }
+
+        /// Record one observation against an explicit bound table — the same linear scan,
+        /// for histograms whose unit is not µs (see [`ROW_BUCKET_BOUNDS`]). The caller
+        /// must pass the SAME table the renderer labels with, or `le` would lie.
+        #[inline]
+        pub fn observe_in(&self, value: u64, bounds: &[u64; N_BUCKETS - 1]) {
+            let idx = bounds
                 .iter()
-                .position(|&b| micros <= b)
+                .position(|&b| value <= b)
                 .unwrap_or(N_BUCKETS - 1);
             self.buckets[idx].fetch_add(1, Relaxed);
-            self.sum_micros.fetch_add(micros, Relaxed);
+            self.sum.fetch_add(value, Relaxed);
             self.count.fetch_add(1, Relaxed);
         }
 
@@ -192,7 +226,7 @@ mod imp {
             }
             HistogramSnapshot {
                 buckets,
-                sum_micros: self.sum_micros.load(Relaxed),
+                sum: self.sum.load(Relaxed),
                 count: self.count.load(Relaxed),
             }
         }
@@ -205,11 +239,12 @@ mod imp {
     }
 
     /// A rendering-ready copy of a [`Histogram`]: per-bucket (non-cumulative) counts,
-    /// the µs sum, and the total count.
+    /// the summed observations (µs for latency, rows for a count histogram), and the
+    /// total count.
     #[derive(Clone, Copy, Debug)]
     pub struct HistogramSnapshot {
         pub buckets: [u64; N_BUCKETS],
-        pub sum_micros: u64,
+        pub sum: u64,
         pub count: u64,
     }
 
@@ -241,8 +276,14 @@ mod imp {
 
     /// Process-global Tier-1 latency histograms (208.2), read via [`engine_hist`].
     pub struct EngineHistograms {
-        /// `Graph::try_source_push` — the write-path headline latency.
-        pub source_push: Histogram,
+        /// One caller-declared BATCH of source pushes — on the replica path, one worker's
+        /// apply of one bounded chunk (fan-out + sink drain). See [`ApplyBatch`] for why
+        /// this is neither per-push nor per-transaction.
+        pub apply_batch: Histogram,
+        /// Rows in that batch, over [`ROW_BUCKET_BOUNDS`]. The companion that keeps the
+        /// latency reading interpretable: it separates "slow because it was 1000 rows"
+        /// from "slow because something is wrong".
+        pub apply_batch_rows: Histogram,
         /// `builder::build_pipeline` — query compile latency.
         pub query_build: Histogram,
         /// `Graph::try_hydrate` — subscription cold-start latency.
@@ -252,7 +293,8 @@ mod imp {
     impl EngineHistograms {
         const fn new() -> Self {
             EngineHistograms {
-                source_push: Histogram::new(),
+                apply_batch: Histogram::new(),
+                apply_batch_rows: Histogram::new(),
                 query_build: Histogram::new(),
                 hydrate: Histogram::new(),
             }
@@ -266,12 +308,81 @@ mod imp {
     pub fn engine_hist() -> &'static EngineHistograms {
         &ENGINE_HIST
     }
+
+    /// RAII scope for ONE batch of source pushes: times the whole batch and records how
+    /// many rows it carried, both on drop.
+    ///
+    /// **Why this is not a per-push timer.** It used to be — `try_source_push` opened a
+    /// [`Timed`] — and that was wrong twice over. The apply path pushes a batch's rows ONE
+    /// AT A TIME (`rindle-replica`'s `push_and_drain` loops over the captured slice), so a
+    /// 100k-row write paid 100k `Instant::now()` pairs: measured at ~15ns per push, ~13%
+    /// of a minimal in-memory push. And it bought nothing, because [`BUCKET_BOUNDS_MICROS`]
+    /// starts at 50µs while a push takes ~150ns — every sample landed in bucket 0, so the
+    /// 17 buckets described no distribution at all.
+    ///
+    /// **Why it is not per-TRANSACTION either.** Naming matters here, because the obvious
+    /// reading of "batch" is "transaction" and it is wrong on the replica path in two
+    /// independent ways:
+    ///
+    /// 1. **Chunking.** `rindle-replica`'s coordinator cuts a transaction into `TxPush`
+    ///    chunks of at most `PUSH_CHUNK_ROWS` (1024) rows, so a transaction bigger than
+    ///    that is several batches. A 50k-row backfill is 49 observations, never one.
+    /// 2. **Broadcast.** Each chunk goes to EVERY worker (one shared `Arc`), and each
+    ///    worker opens its own scope over it. With `n_workers = W` a single chunk yields W
+    ///    observations of the same row count — so `_count` and `_sum` are ×W. Quantiles
+    ///    are unaffected (identical duplicates do not move a distribution), which is why
+    ///    the dashboard reads quantiles and not rates.
+    ///
+    /// So one observation is **one worker's apply of one bounded chunk** — real, useful
+    /// latency, but not a transaction. Do not label it as one. (An earlier revision of this
+    /// metric did, under the name `push_batch`; see the write-latency revision note in
+    /// `designs-implemented/208-METRICS-EXPANSION-DESIGN.md`.)
+    ///
+    /// Per-ROW cost stays recoverable, because `rindle_changes_processed_total` still
+    /// counts every change (one relaxed add, no clock) and scales with W the same way:
+    ///
+    /// ```text
+    /// rate(rindle_apply_batch_seconds_sum) / rate(rindle_changes_processed_total)
+    ///     = mean seconds per row
+    /// ```
+    ///
+    /// A caller that declares no batch is simply not timed — its rows are still counted.
+    /// That is deliberate: only a caller that knows its own batch boundary can draw one,
+    /// and inventing a batch-of-1 would reintroduce the per-push clock.
+    pub struct ApplyBatch {
+        rows: u64,
+        start: Instant,
+    }
+
+    impl Drop for ApplyBatch {
+        #[inline]
+        fn drop(&mut self) {
+            let h = engine_hist();
+            h.apply_batch
+                .observe(self.start.elapsed().as_micros() as u64);
+            h.apply_batch_rows.observe_in(self.rows, &ROW_BUCKET_BOUNDS);
+        }
+    }
+
+    /// Open an [`ApplyBatch`] scope for a batch of `rows` changes. Bind it (`let _batch =
+    /// …`) so it closes on every return path, `?` included.
+    #[inline]
+    pub fn apply_batch(rows: u64) -> ApplyBatch {
+        ApplyBatch {
+            rows,
+            start: Instant::now(),
+        }
+    }
 }
 
+// `ROW_BUCKET_BOUNDS` ships alongside `ROW_BUCKET_LE` deliberately: `Histogram::observe_in`
+// is public and its contract is "pass the SAME table the renderer labels with", which an
+// out-of-crate caller cannot honour if only the label half is reachable.
 #[cfg(feature = "metrics")]
 pub use imp::{
-    engine, engine_hist, snapshot, EngineHistograms, EngineMetrics, EngineSnapshot, Histogram,
-    HistogramSnapshot, Timed, BUCKET_LE_SECONDS, N_BUCKETS,
+    apply_batch, engine, engine_hist, snapshot, ApplyBatch, EngineHistograms, EngineMetrics,
+    EngineSnapshot, Histogram, HistogramSnapshot, Timed, BUCKET_LE_SECONDS, N_BUCKETS,
+    ROW_BUCKET_BOUNDS, ROW_BUCKET_LE,
 };
 
 // A no-op RAII timer TYPE for the feature-off build, so a `metric_timer!` site binds a
@@ -286,10 +397,21 @@ mod imp_off {
             Timed
         }
     }
+
+    /// Feature-off twin of the batch scope: a ZST with no `Drop`, no `Instant`, no
+    /// global. `apply_batch` is a plain `fn` (not a macro) so a caller in ANOTHER crate —
+    /// `rindle-replica`'s apply loop is the one that matters — writes one unconditional
+    /// line with no `#[cfg]` of its own and pays nothing here.
+    pub struct ApplyBatch;
+
+    #[inline]
+    pub fn apply_batch(_rows: u64) -> ApplyBatch {
+        ApplyBatch
+    }
 }
 
 #[cfg(not(feature = "metrics"))]
-pub use imp_off::Timed;
+pub use imp_off::{apply_batch, ApplyBatch, Timed};
 
 // ---------------------------------------------------------------------------
 // metrics ON: fold each seam into a relaxed atomic add on the global registry.
@@ -371,9 +493,12 @@ macro_rules! metric_build_err {
 }
 
 /// Start an RAII latency timer for a named [`EngineHistograms`](imp::EngineHistograms)
-/// field. Bind it (`let _t = metric_timer!(source_push);`) so it observes elapsed µs into
+/// field. Bind it (`let _t = metric_timer!(hydrate);`) so it observes elapsed µs into
 /// the histogram when it drops — on every return path, `?` included. One timer per
-/// call, never per row.
+/// call, never per row — and "never per row" has to hold for the CALL GRAPH, not just
+/// this function body: check whether the caller loops before deciding a seam is coarse
+/// (that is exactly how the retired `source_push` timer became a per-row clock). A seam
+/// whose caller owns the batch wants [`ApplyBatch`](imp::ApplyBatch), not this.
 #[cfg(feature = "metrics")]
 macro_rules! metric_timer {
     ($field:ident) => {

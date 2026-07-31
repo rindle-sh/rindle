@@ -16,10 +16,7 @@ const PORT = Number(process.env.API_PORT ?? 7700);
 
 // One topology (design 214): reads come off the follower (RINDLE_FOLLOWER_URL / RINDLE_DAEMON_URL) and
 // writes go to the replicator write-master (RINDLE_REPLICATOR_URL) — config, not code.
-const daemon = resolveForumDaemon(process.env, {
-  daemonUrl: "http://127.0.0.1:7600",
-  daemonToken: "dev-daemon-token",
-});
+const daemon = resolveForumDaemon(process.env, { daemonToken: "dev-daemon-token" });
 
 const api = createForumApi(daemon);
 

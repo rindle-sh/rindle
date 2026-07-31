@@ -37,8 +37,10 @@ as a baseline to edit, never as snippets to copy into a half-wired project.
 
    This starts `rindled`, applies `migrations/*.sql`, regenerates
    `shared/schema.gen.ts`, seeds, and serves the app. Confirm the dev server
-   URL it prints and that the daemon came up (control plane on :7600,
-   public WebSocket on :7601).
+   URL it prints and that the daemon came up on the control-plane URL it prints
+   alongside it. Ports are allocated per project — so a second Rindle app can
+   run at the same time — so read them from the output or from `rindle.json`'s
+   `bindings` rather than expecting fixed numbers.
 
 4. **Prove the loop before editing**: open the app, and verify a write shows
    up instantly (the optimistic path) and survives a reload (the synced path).

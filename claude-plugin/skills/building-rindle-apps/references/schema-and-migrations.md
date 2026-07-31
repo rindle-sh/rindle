@@ -167,7 +167,7 @@ backfill into explicitly key-ranged, separately numbered files.
 
 Mixed DDL+DML table rebuilds are not atomic in v1. Express an additive change and its
 backfill as two ordered files. The public `SqlClient.migrate()` surface remains DDL-only;
-deploy data migrations with `rindle migrate apply`, locally or with `--remote`.
+deploy data migrations with `rindle migrate apply`, locally or with `--cloud`.
 
 ### 3 · Generate the typed schema
 
