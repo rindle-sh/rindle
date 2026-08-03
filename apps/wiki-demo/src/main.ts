@@ -18,13 +18,13 @@
 //   node --conditions=@rindle/source src/main.ts --source synthetic   # deterministic offline stream
 //
 // Env: WIKI_API_PORT (7700) · RINDLED_BIN · WIKI_DAEMON_TOKEN · WIKI_SOURCE · WIKI_DATA_DIR
-//      · WIKI_NWORKERS (3) · WIKI_WINDOW_MIN (180)
+//      · WIKI_NWORKERS (2) · WIKI_WINDOW_MIN (180)
 //      · WIKI_BACKFILL_MIN (=WINDOW_MIN; cold-start seed depth, 0=off) · WIKI_DOMAIN.
 
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { startPair } from "./daemon.ts";
+import { resetWikiDataForImage, startPair } from "./daemon.ts";
 import { createSyntheticSource, createWikimediaSource } from "./sources.ts";
 import { startTinyMachine } from "./tier.ts";
 
@@ -36,7 +36,7 @@ function flag(name: string): string | undefined {
 const API_PORT = Number(process.env.WIKI_API_PORT ?? 7700);
 const DAEMON_TOKEN = process.env.WIKI_DAEMON_TOKEN; // follower control-plane bearer; omit for open loopback dev
 const WRITE_TOKEN = process.env.WIKI_WRITE_TOKEN; // master write-ingress bearer; omit for open loopback dev
-const N_WORKERS = Number(process.env.WIKI_NWORKERS ?? 3);
+const N_WORKERS = Number(process.env.WIKI_NWORKERS ?? 2);
 const WINDOW_SEC = Number(process.env.WIKI_WINDOW_MIN ?? 180) * 60; // prune edits older than this
 // Cold-start backfill depth: on a fresh volume (no persisted offset) we open the stream this far in
 // the past so the window is seeded at once rather than filling over wall-clock time. Defaults to the
@@ -48,7 +48,13 @@ const sourceName = flag("--source") ?? process.env.WIKI_SOURCE ?? "wikimedia";
 // daemon's SQLite file so the dataset and resume cursor survive restarts together.
 const DATA_DIR = process.env.WIKI_DATA_DIR ?? join(process.cwd(), ".rindled-wiki");
 const OFFSET_PATH = join(DATA_DIR, ".offset");
-mkdirSync(DATA_DIR, { recursive: true });
+const OFFSET_TMP_PATH = join(DATA_DIR, ".offset.tmp");
+const deploymentReset = resetWikiDataForImage(DATA_DIR, process.env.FLY_IMAGE_REF);
+if (deploymentReset.reset) {
+  console.log(
+    `[wiki] new deployment image — reset ${deploymentReset.removed.length} disposable data file(s) before backfill`,
+  );
+}
 
 const pair = await startPair({
   dataDir: DATA_DIR,
@@ -82,7 +88,8 @@ const machine = await startTinyMachine({
   masterToken: WRITE_TOKEN,
   apiPort: API_PORT,
   sourceName,
-  daemonPid: pair.followerPid, // fold the follower rindled's RSS into the memory badge
+  masterPid: pair.masterPid,
+  followerPid: pair.followerPid,
 });
 console.log(
   `[wiki] API + metrics on http://127.0.0.1:${machine.apiPort}  ` +
@@ -102,15 +109,20 @@ else if (backfillSinceMs !== undefined)
   console.log(`[wiki] cold start — seeding "${source.name}" from ${Math.round(BACKFILL_SEC / 60)} min ago, then tailing live`);
 else console.log(`[wiki] starting "${source.name}" live (no stored offset)`);
 
-// Debounce offset persistence: the source reports the applied offset on its flush cadence; we
-// write the latest to disk every couple seconds (and once more on shutdown).
+// Debounce offset persistence: the source reports committed offsets in strict source order. Write
+// through a same-directory rename so a crash leaves either the previous complete cursor or the new
+// one, never a torn file.
 let pendingOffset: string | undefined;
+const persistOffset = (id: string): void => {
+  writeFileSync(OFFSET_TMP_PATH, id);
+  renameSync(OFFSET_TMP_PATH, OFFSET_PATH);
+};
 const offsetTimer = setInterval(() => {
   if (pendingOffset === undefined) return;
   const id = pendingOffset;
-  pendingOffset = undefined;
   try {
-    writeFileSync(OFFSET_PATH, id);
+    persistOffset(id);
+    if (pendingOffset === id) pendingOffset = undefined;
   } catch (err) {
     console.error("[wiki] failed to persist offset:", (err as Error).message);
   }
@@ -123,28 +135,53 @@ const stopSource = source.start(machine.ingest, {
     pendingOffset = id;
     machine.noteOffset(id);
   },
+  onFatal: (error) => {
+    console.error("[wiki] source stopped after bounded retries:", error.message);
+    void shutdown(1);
+  },
 });
 
 // Keep the dataset (and the "most-edited" window) bounded: drop edits older than the window.
+let pruneInFlight: Promise<void> | undefined;
 const pruneTimer = setInterval(() => {
-  void machine.prune(Math.floor(Date.now() / 1000) - WINDOW_SEC).catch((err) => console.error("[wiki] prune failed:", (err as Error).message));
+  if (pruneInFlight) return;
+  pruneInFlight = machine
+    .prune(Math.floor(Date.now() / 1000) - WINDOW_SEC)
+    .catch((err) => console.error("[wiki] prune failed:", (err as Error).message))
+    .finally(() => {
+      pruneInFlight = undefined;
+    });
 }, 60_000);
 
-const shutdown = () => {
+let shutdownPromise: Promise<void> | undefined;
+let shutdownExitCode = 0;
+function shutdown(exitCode = 0): Promise<void> {
+  shutdownExitCode = Math.max(shutdownExitCode, exitCode);
+  if (shutdownPromise) return shutdownPromise;
   shuttingDown = true;
-  stopSource();
   clearInterval(offsetTimer);
   clearInterval(pruneTimer);
-  if (pendingOffset !== undefined) {
+  shutdownPromise = (async () => {
     try {
-      writeFileSync(OFFSET_PATH, pendingOffset);
-    } catch {
-      /* best effort on the way out */
+      await stopSource();
+    } catch (error) {
+      shutdownExitCode = 1;
+      console.error("[wiki] source drain failed during shutdown:", (error as Error).message);
     }
-  }
-  void machine.close();
-  pair.close();
-  process.exit(0);
-};
-process.on("SIGINT", shutdown);
-process.on("SIGTERM", shutdown);
+    if (pendingOffset !== undefined) {
+      try {
+        persistOffset(pendingOffset);
+        pendingOffset = undefined;
+      } catch (error) {
+        shutdownExitCode = 1;
+        console.error("[wiki] final offset persistence failed:", (error as Error).message);
+      }
+    }
+    await machine.close();
+    pair.close();
+    process.exitCode = shutdownExitCode;
+  })();
+  return shutdownPromise;
+}
+process.on("SIGINT", () => void shutdown());
+process.on("SIGTERM", () => void shutdown());

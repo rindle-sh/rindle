@@ -1,6 +1,6 @@
 // Property-based integration test for the CLIENT leg: the real `useStreamedText` hook rendered by
 // real React, subscribed through a real `@rindle/api-server` stream plane over a real SQLite store
-// (designs/LM-STREAM-CHECKPOINT-DESIGN.md §10.7). The wire between the tiers is just frames, so the
+// (designs-implemented/LM-STREAM-CHECKPOINT-DESIGN.md §10.7). The wire between the tiers is just frames, so the
 // two are coupled in-process; the transport emulates `EventSource` semantics faithfully — buffered
 // delivery, connection drops that LOSE undelivered frames, and reconnection at the last id the page
 // received (which, after a `durable` frame, sits BEHIND the chunk progress — TRAP 5's overlap).

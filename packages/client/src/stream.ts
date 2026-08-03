@@ -1,4 +1,4 @@
-// The LM stream plane's SHARED contract (designs/LM-STREAM-CHECKPOINT-DESIGN.md): the frame shapes
+// The LM stream plane's SHARED contract (designs-implemented/LM-STREAM-CHECKPOINT-DESIGN.md): the frame shapes
 // both ends speak, plus the two pure functions that reassemble a response from its two planes.
 //
 // This lives in `@rindle/client` rather than `@rindle/api-server` because BOTH tiers need it and the

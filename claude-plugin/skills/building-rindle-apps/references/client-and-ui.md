@@ -177,7 +177,9 @@ function SearchResults({ term }: { term: string }) {
 The option is available on `useQuery`, `useQueryStatus`, `useSyncQuery`,
 `useFragment`, and `<Frag releaseDelayMs={0}>`. `useRoot` takes the tree default —
 its argument list is variadic (`query, args, ...ctx, fragment`), so a trailing
-options object would be ambiguous.
+options object would be ambiguous. The full search pattern — `ilike` escaping,
+local-only search, debouncing the lease — is the
+[Search & typeahead](https://rindle.sh/docs/typeahead) recipe.
 
 To move the default for a whole tree, set it on the provider — treat it as a
 constant, since changing it rebuilds the caches and tears down every live view:

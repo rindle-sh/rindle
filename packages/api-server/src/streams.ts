@@ -1,4 +1,4 @@
-// LM stream checkpointing — the two-plane response path (designs/LM-STREAM-CHECKPOINT-DESIGN.md).
+// LM stream checkpointing — the two-plane response path (designs-implemented/LM-STREAM-CHECKPOINT-DESIGN.md).
 //
 // A model response arrives as hundreds of tiny deltas per second. Every one wants to be on a screen
 // immediately; none wants to be a durable write. So the response runs on TWO planes sharing ONE
@@ -177,6 +177,40 @@ export interface AuthorizeStreamInput<User> {
   request?: unknown;
 }
 
+/**
+ * Optional cross-process transport for the LIVE plane
+ * (designs-implemented/LM-STREAM-RELAY-DESIGN.md). Both methods are independently optional; which
+ * ones you implement is which topology you built — an addressing adapter (a Durable Object named by
+ * `streamId`, `fly-replay`) implements only `attach`; a broadcast adapter (Redis pub/sub, NATS)
+ * mirrors with `publish` and subscribes with `attach`; a log adapter (Redis Streams, Kafka) appends
+ * and replays. Never consulted for the durable plane — checkpoints are unaffected by any of this.
+ *
+ * The plane does not trust what `attach` yields: frames are run through the conform pass
+ * ({@link StreamRelayConform}) and any contract violation downgrades the subscription to `stale`,
+ * which already means "you are on the durable plane now". A broken relay costs a reader smooth
+ * tokens, never corrupted text — and can never reach the producer.
+ */
+export interface StreamRelay {
+  /** Producer side: every frame this process's producer fans out (`chunk`, `durable`, and the
+   *  terminal `end`), mirrored outward. MUST NOT block; a throw or rejected promise is caught and
+   *  routed to {@link RindleStreamOptions.onRelayError} — a relay outage may cost the live leg,
+   *  never the generation. Returned promises are observed but never awaited. */
+  publish?(streamId: string, frame: StreamFrame): void | PromiseLike<void>;
+  /** Subscriber side: this process is not hosting `streamId`. Return a frame source, or `undefined`
+   *  for `absent` — exactly the no-relay answer. Consulted only AFTER `authorize` has passed, and
+   *  only on a live-plane miss (a local stream always wins). The plane closes the source
+   *  (`return()`) when the reader disconnects. An adapter that cannot serve `from` (pub/sub has no
+   *  history) yields `stale` and stops — the reader converges on the durable plane (§5). */
+  attach?(streamId: string, from: number): Promise<AsyncIterable<StreamFrame> | undefined>;
+}
+
+export interface StreamRelayErrorInfo {
+  streamId: string;
+  /** Where it failed: mirroring a frame out (`publish`), dialing the adapter (`attach`), or
+   *  consuming/conforming its frames (`frames`). */
+  phase: "publish" | "attach" | "frames";
+}
+
 export interface RindleStreamOptions<User> {
   /** Where checkpoints land: the app's tables (the default path) or a raw `commit` callback. */
   checkpoint: StreamCheckpointTarget;
@@ -199,11 +233,26 @@ export interface RindleStreamOptions<User> {
   retainChars?: number;
   /** How long a sealed stream stays joinable before eviction. Default 30s. */
   lingerMs?: number;
-  /** Per-subscriber frame queue cap; overflow drops that subscriber with `stale` (§4). Default 1024. */
+  /** Per-subscriber frame queue cap; overflow drops that subscriber with `stale` (§4). Default 1024.
+   *  Relayed readers reuse the same bound: a slow reader on a relayed stream costs itself the live
+   *  leg exactly as a local one does. */
   maxQueuedFrames?: number;
   /** A checkpoint that exhausted its retries. The stream keeps streaming — this is a durability
    *  stall, not a stream stall — so the error must not vanish. Absent ⇒ `console.error`. */
   onCheckpointError?: (err: unknown, info: { streamId: string; from: number; seq: number }) => void;
+  /** Cross-process transport for the live plane ({@link StreamRelay}). Without one, a subscriber
+   *  that lands on a process not hosting its stream gets `absent` and reads the durable plane at
+   *  checkpoint granularity — correct, just chunky. */
+  relay?: StreamRelay;
+  /** Bound on `relay.attach`: a hung adapter yields `absent`, not a hung HTTP request. An
+   *  addressing adapter MAY deliberately spend this window waiting out a subscribe that races its
+   *  own kick. Default 2000. */
+  relayAttachTimeoutMs?: number;
+  /** A diagnostic, never a control path: relay failures (a throwing or rejecting `publish`, a failed
+   *  or timed-out `attach`, a conform violation in the frames) land here, wrapped so a throwing hook
+   *  cannot reach the plane. The reader-facing outcome is always the same legal `absent`/`stale`.
+   *  Absent ⇒ `console.error`. */
+  onRelayError?: (err: unknown, info: StreamRelayErrorInfo) => void;
 }
 
 // ------------------------------------------------------------------------------- producer handle
@@ -271,6 +320,7 @@ const DEFAULT_CHECKPOINT_RETRIES = 3;
 const DEFAULT_RETAIN_CHARS = 64 * 1024;
 const DEFAULT_LINGER_MS = 30_000;
 const DEFAULT_MAX_QUEUED_FRAMES = 1024;
+const DEFAULT_RELAY_ATTACH_TIMEOUT_MS = 2000;
 /** Retry backoff base — 50ms, 100ms, 200ms, … A checkpoint failure is usually a blip at the write
  *  authority; the text is safe in the buffer meanwhile, so there is nothing to rush. */
 const RETRY_BACKOFF_MS = 50;
@@ -565,6 +615,156 @@ class Subscriber {
   }
 }
 
+// ------------------------------------------------------------------------------- the relay conform pass
+
+/**
+ * One frame source arriving over a relay, conformed to the CP §4 contract
+ * (designs-implemented/LM-STREAM-RELAY-DESIGN.md §4).
+ *
+ * An adapter is app code talking to Redis or a socket, and its frames feed `spliceStreamText` on a
+ * browser — so the plane does not trust them. This pass enforces the frame invariants against the
+ * prefix actually delivered and downgrades EVERY violation to a legal `stale` and nothing else:
+ * `stale` already means "you are on the durable plane now, the store is the whole truth", so a
+ * broken relay costs a reader smooth tokens, never corrupted text — and cannot wedge a producer.
+ *
+ * Replayed spans (a reconnecting adapter re-delivering what it already sent) are ABSORBED rather
+ * than punished — deduping against the delivered prefix is what makes reconnect-replay safe without
+ * every adapter hand-rolling it. Spans that overlap the prefix but extend past it pass through
+ * whole: the client splices at the frame's own offset, so an exact overlap re-covers and appends.
+ *
+ * Pure state, no I/O, no plane: `feed` maps one incoming frame to 0-2 outgoing frames (a missing
+ * `open` is synthesized at the join offset); `end`/`fail` close out a source that finished or threw
+ * without a terminal. After a terminal, every method returns `[]`.
+ */
+export class StreamRelayConform {
+  private readonly streamId: string;
+  /** The requested join offset — the synthesized `open`'s position, and where the prefix starts. */
+  private readonly from: number;
+  private readonly onViolation: ((reason: string) => void) | undefined;
+  /** End of the delivered prefix. */
+  private pos: number;
+  private lastDurable = 0;
+  private opened = false;
+  private done = false;
+
+  constructor(streamId: string, from: number, onViolation?: (reason: string) => void) {
+    this.streamId = streamId;
+    this.from = from;
+    this.pos = from;
+    this.onViolation = onViolation;
+  }
+
+  feed(frame: StreamFrame): StreamFrame[] {
+    if (this.done) return [];
+    switch (frame.type) {
+      case "open": {
+        if (this.opened) return []; // a reconnecting adapter's second open: absorbed
+        if (
+          frame.streamId !== this.streamId ||
+          !Number.isInteger(frame.from) ||
+          !Number.isInteger(frame.seq) ||
+          !Number.isInteger(frame.durableSeq) ||
+          frame.from < 0 ||
+          frame.seq < frame.from
+        ) {
+          return this.violate(`relay open for ${JSON.stringify(frame.streamId)} at ${frame.from} is malformed`);
+        }
+        // An open PAST the requested offset is the adapter saying it cannot serve `from` (pub/sub
+        // has no history, §5): delivering it would leave a hole in the middle of the response, so
+        // the honest answer is the durable plane.
+        if (frame.from > this.from) {
+          return this.violate(`relay open at ${frame.from} cannot serve the requested ${this.from}`);
+        }
+        this.opened = true;
+        this.pos = frame.from;
+        return [frame];
+      }
+      case "chunk": {
+        if (
+          !Number.isInteger(frame.from) ||
+          !Number.isInteger(frame.seq) ||
+          frame.from < 0 ||
+          typeof frame.text !== "string" ||
+          frame.text.length !== frame.seq - frame.from
+        ) {
+          return this.violate(`relay chunk ${frame.from}→${frame.seq} does not span exactly its offsets`);
+        }
+        if (frame.from > this.pos) {
+          return this.violate(`relay chunk at ${frame.from} leaves a gap after ${this.pos}`);
+        }
+        if (frame.seq <= this.pos) return []; // entirely within the delivered prefix (a replay): absorbed
+        const out = this.opened ? [] : [this.synthOpen()];
+        this.pos = frame.seq;
+        out.push(frame);
+        return out;
+      }
+      case "durable": {
+        // Purely informational to a reader (the hook ignores it; SSE uses it as a resume id), so a
+        // claim that rewinds — or outruns what this subscription has SEEN produced, which P forbids
+        // — is dropped rather than downgraded.
+        if (!Number.isInteger(frame.seq) || frame.seq < this.lastDurable || frame.seq > this.pos) return [];
+        const out = this.opened ? [] : [this.synthOpen()];
+        this.lastDurable = frame.seq;
+        out.push(frame);
+        return out;
+      }
+      case "end": {
+        if (!Number.isInteger(frame.seq) || frame.seq < 0) {
+          return this.violate(`relay end at ${String(frame.seq)} is malformed`);
+        }
+        // An `end` whose durable length outruns the delivered prefix means the adapter LOST text
+        // (durable never exceeds produced), so the reader is short and must not be told it saw
+        // everything. Downgrading keeps `end` meaning the same thing relayed as local: the whole
+        // produced text arrived.
+        if (frame.seq > this.pos) {
+          return this.violate(`relay end at ${frame.seq} outruns the ${this.pos} characters delivered`);
+        }
+        this.done = true;
+        const out = this.opened ? [] : [this.synthOpen()];
+        out.push(frame);
+        return out;
+      }
+      case "stale":
+      case "absent": {
+        // Legal bare — the local plane's own floor/eviction answers carry no `open` either.
+        this.done = true;
+        return [frame];
+      }
+    }
+  }
+
+  /** The source completed without a terminal (a truncated relay): the reader falls back. */
+  end(): StreamFrame[] {
+    if (this.done) return [];
+    this.onViolation?.("relay source ended without a terminal frame");
+    return this.terminate();
+  }
+
+  /** The source threw mid-iteration, or the plane is dropping a reader that stopped draining:
+   *  a bare `stale` at the delivered position. */
+  fail(): StreamFrame[] {
+    return this.done ? [] : this.terminate();
+  }
+
+  /** A synthesized join, for an adapter that (correctly, in broadcast mode) never mirrors the
+   *  per-subscriber `open`: positioned at the requested offset, which the reader asked from because
+   *  its durable view already holds it. */
+  private synthOpen(): StreamFrame {
+    this.opened = true;
+    return { type: "open", streamId: this.streamId, from: this.from, seq: this.from, durableSeq: this.from, ended: false };
+  }
+
+  private terminate(): StreamFrame[] {
+    this.done = true;
+    return [{ type: "stale", floorSeq: this.pos, durableSeq: this.lastDurable }];
+  }
+
+  private violate(reason: string): StreamFrame[] {
+    this.onViolation?.(reason);
+    return this.terminate();
+  }
+}
+
 // ------------------------------------------------------------------------------- the live stream
 
 interface Waiter {
@@ -812,6 +1012,8 @@ class LiveStream<User> {
       status: seal.status,
       ...(seal.error !== undefined ? { error: seal.error } : {}),
     };
+    // The terminal reaches the relay too (it bypasses `fanout` locally only to bypass the cap).
+    this.plane.publishRelay(this.streamId, frame);
     for (const sub of [...this.subs]) sub.finish(frame);
     this.plane.retire(this.streamId);
     if (this.sealError) this.sealed?.reject(this.sealError);
@@ -852,6 +1054,9 @@ class LiveStream<User> {
   // ---- subscriber side
 
   private fanout(frame: StreamFrame): void {
+    // Every frame local subscribers get, the relay gets — including when nobody local is attached
+    // (a broadcast relay's whole point). Wrapped so an outage costs the live leg, never this stream.
+    this.plane.publishRelay(this.streamId, frame);
     for (const sub of [...this.subs]) {
       if (!sub.offer(frame)) {
         // Bounded, then dropped: a reader that stopped draining costs itself a rejoin, never the
@@ -921,8 +1126,11 @@ export class StreamPlane<User> {
   readonly retainChars: number;
   readonly lingerMs: number;
   readonly maxQueuedFrames: number;
+  readonly relayAttachTimeoutMs: number;
 
   private readonly live = new Map<string, LiveStream<User>>();
+  /** Live relayed subscriptions, so teardown ({@link closeSync}) releases their drivers too. */
+  private readonly relayed = new Set<Subscriber>();
   private readonly opts: RindleStreamOptions<User>;
   private readonly sink: StreamSqlSink | undefined;
   private readonly mapped: MappedTableSql | undefined;
@@ -939,7 +1147,15 @@ export class StreamPlane<User> {
     this.retries = opts.policy?.retries ?? DEFAULT_CHECKPOINT_RETRIES;
     this.lingerMs = opts.lingerMs ?? DEFAULT_LINGER_MS;
     this.maxQueuedFrames = opts.maxQueuedFrames ?? DEFAULT_MAX_QUEUED_FRAMES;
+    this.relayAttachTimeoutMs = opts.relayAttachTimeoutMs ?? DEFAULT_RELAY_ATTACH_TIMEOUT_MS;
     this.openToken = opts.hostId ?? randomOpenToken();
+    // Relay misconfiguration is refused loudly (the room-profile rule), never ignored.
+    if (opts.relay !== undefined && opts.relay.publish === undefined && opts.relay.attach === undefined) {
+      throw new TypeError("streams.relay implements neither publish nor attach — which topology is this? (LM-STREAM-RELAY §3.1)");
+    }
+    if (opts.relay === undefined && (opts.relayAttachTimeoutMs !== undefined || opts.onRelayError !== undefined)) {
+      throw new TypeError("streams.relayAttachTimeoutMs/onRelayError do nothing without streams.relay");
+    }
     if ("tables" in opts.checkpoint) {
       if (!sink) throw new TypeError("streams.checkpoint.tables needs a SQL-capable mutation backend");
       this.tables = opts.checkpoint.tables;
@@ -1076,8 +1292,162 @@ export class StreamPlane<User> {
       request: input.request,
     });
     if (verdict === false) throw new StreamForbidden(input.streamId);
-    if (!stream) return oneFrame(input.streamId, { type: "absent" });
+    if (!stream) {
+      // The relay is consulted only on a live-plane miss, and only after `authorize` passed — a
+      // denial must not become an existence probe against the relay either. A local stream always
+      // wins: the producer's own readers keep the lowest-latency path.
+      const relayed = await this.attachRelay(input.streamId, from);
+      return relayed ?? oneFrame(input.streamId, { type: "absent" });
+    }
     return stream.subscribe(from);
+  }
+
+  /** The subscribe-miss leg (LM-STREAM-RELAY §3): ask the app's relay for the frames of a stream
+   *  this process is not hosting. `undefined` — no relay, no `attach`, the adapter declined, timed
+   *  out, or threw — is `absent`, exactly today's answer. */
+  private async attachRelay(streamId: string, from: number): Promise<StreamSubscription | undefined> {
+    const relay = this.opts.relay;
+    if (relay?.attach === undefined) return undefined;
+    // Floored like the local join, but clamped only below: the producer's length is not known here.
+    const at = Number.isFinite(from) ? Math.max(Math.floor(from), 0) : 0;
+    let source: AsyncIterable<StreamFrame> | undefined;
+    try {
+      source = await this.boundedAttach(relay, streamId, at);
+    } catch (err) {
+      this.reportRelayError(err, { streamId, phase: "attach" });
+      return undefined;
+    }
+    if (source === undefined) return undefined;
+    return this.relaySubscription(streamId, at, source);
+  }
+
+  /** `attach`, bounded by {@link RindleStreamOptions.relayAttachTimeoutMs}: a hung adapter yields
+   *  `absent`, not a hung HTTP request. A source that resolves after the deadline is closed, not
+   *  leaked. */
+  private boundedAttach(
+    relay: StreamRelay,
+    streamId: string,
+    from: number,
+  ): Promise<AsyncIterable<StreamFrame> | undefined> {
+    // `async` wrapping so a synchronously-throwing adapter is an attach failure, not a plane throw.
+    const attempt = (async () => relay.attach!(streamId, from))();
+    return new Promise((resolve, reject) => {
+      let late = false;
+      const t = timer(() => {
+        late = true;
+        reject(new Error(`stream ${streamId}: relay.attach timed out after ${this.relayAttachTimeoutMs}ms`));
+      }, this.relayAttachTimeoutMs);
+      attempt.then(
+        (source) => {
+          clearTimeout(t);
+          if (!late) return resolve(source);
+          closeFrameSource(source); // too late to serve the reader; don't leak the channel
+        },
+        (err) => {
+          clearTimeout(t);
+          if (!late) reject(err);
+        },
+      );
+    });
+  }
+
+  /** Wrap an adapter's frame source as a plane subscription: conform every frame (LM-STREAM-RELAY
+   *  §4), bound the reader with the same queue cap as a local one (§7), and tear the adapter down
+   *  when either side lets go. The driver never throws into the plane: adapter failures become one
+   *  `stale`. */
+  private relaySubscription(streamId: string, from: number, source: AsyncIterable<StreamFrame>): StreamSubscription {
+    const conform = new StreamRelayConform(streamId, from, (reason) =>
+      this.reportRelayError(new Error(reason), { streamId, phase: "frames" }),
+    );
+    let closed = false;
+    let signalClose!: () => void;
+    const closedP = new Promise<void>((resolve) => (signalClose = resolve));
+    const closedTag = closedP.then(() => "closed" as const);
+    const release = (): void => {
+      if (!closed) {
+        closed = true;
+        signalClose();
+      }
+    };
+    const sub = new Subscriber(this.maxQueuedFrames, (s) => {
+      this.relayed.delete(s);
+      release();
+    });
+    this.relayed.add(sub);
+    let it: AsyncIterator<StreamFrame> | undefined;
+    /** @returns false once the subscription finished (terminal delivered, or the reader dropped). */
+    const deliver = (frames: StreamFrame[]): boolean => {
+      for (const frame of frames) {
+        if (frame.type === "end" || frame.type === "stale" || frame.type === "absent") {
+          sub.finish(frame);
+          return false;
+        }
+        if (!sub.offer(frame)) {
+          // The same bound as a local reader: a relayed subscriber that stops draining costs
+          // itself the live leg, never unbounded memory.
+          const [stale] = conform.fail();
+          if (stale) sub.finish(stale);
+          return false;
+        }
+      }
+      return true;
+    };
+    void (async () => {
+      try {
+        // Iterator construction is adapter code too: keep a throwing factory inside the same
+        // stale/report/cleanup boundary as a throwing `next()`.
+        it = source[Symbol.asyncIterator]();
+        for (;;) {
+          // Raced rather than awaited bare: a reader disconnect must release this driver even when
+          // the adapter never yields another frame (its own `return()` may be queued behind the
+          // pending `next()` forever).
+          const res = await Promise.race([it.next(), closedTag]);
+          if (res === "closed") return;
+          if (res.done) {
+            deliver(conform.end());
+            return;
+          }
+          if (!deliver(conform.feed(res.value))) return;
+        }
+      } catch (err) {
+        this.reportRelayError(err, { streamId, phase: "frames" });
+        deliver(conform.fail());
+      } finally {
+        release();
+        // If construction itself threw there is no iterator to return, and asking the source to
+        // construct a second one during cleanup could repeat side effects or throw again.
+        closeFrameSource(undefined, it);
+      }
+    })();
+    return { streamId, frames: sub.frames(), close: () => sub.close() };
+  }
+
+  /** Mirror one producer frame outward (LM-STREAM-RELAY §3). Never blocks or breaks the producer:
+   *  a throw or rejected promise is reported and swallowed — a relay outage may cost relayed
+   *  readers the live leg, never the generation or its checkpoints. */
+  publishRelay(streamId: string, frame: StreamFrame): void {
+    const relay = this.opts.relay;
+    if (relay?.publish === undefined) return;
+    try {
+      const published = relay.publish(streamId, frame);
+      if (published !== undefined) {
+        void Promise.resolve(published).catch((err) =>
+          this.reportRelayError(err, { streamId, phase: "publish" }),
+        );
+      }
+    } catch (err) {
+      this.reportRelayError(err, { streamId, phase: "publish" });
+    }
+  }
+
+  reportRelayError(err: unknown, info: StreamRelayErrorInfo): void {
+    // Same discipline as reportCheckpointError: a diagnostic must never take its caller down.
+    try {
+      if (this.opts.onRelayError) this.opts.onRelayError(err, info);
+      else console.error(`[rindle api-server] stream ${info.streamId}: relay ${info.phase} failed:`, err);
+    } catch (hookErr) {
+      console.error(`[rindle api-server] stream ${info.streamId}: onRelayError itself threw:`, hookErr);
+    }
   }
 
   /** Seal every live stream `interrupted`. In mapped-table mode the seal IS the compaction, so a
@@ -1091,6 +1461,8 @@ export class StreamPlane<User> {
   closeSync(): void {
     for (const s of this.live.values()) s.detachAll();
     this.live.clear();
+    for (const s of [...this.relayed]) s.close();
+    this.relayed.clear();
   }
 
   /** A sealed stream stays joinable for the linger window, so a subscribe that races the last token
@@ -1237,6 +1609,18 @@ export class StreamForbidden extends Error {
     super(`stream ${streamId}: forbidden`);
     this.name = "StreamForbidden";
     this.streamId = streamId;
+  }
+}
+
+/** Best-effort adapter teardown (the `for await` discipline, by hand): never awaited into the
+ *  plane — a hung `return()` must not hold anything — and a synchronously-throwing one is the
+ *  adapter's bug, not the plane's problem. */
+function closeFrameSource(source: AsyncIterable<StreamFrame> | undefined, it?: AsyncIterator<StreamFrame>): void {
+  try {
+    const iter = it ?? source?.[Symbol.asyncIterator]();
+    void Promise.resolve(iter?.return?.()).catch(() => {});
+  } catch {
+    // ignored — see above
   }
 }
 

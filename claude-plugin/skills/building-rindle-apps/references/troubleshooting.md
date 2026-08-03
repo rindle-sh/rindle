@@ -181,7 +181,7 @@ app-tier HTTP client sends no identity and cannot be fenced.
 
 To keep the old numbers instead, pin the block in `rindle.ncl`:
 
-```nickel
+```text
 { portBase = 7600 }
 ```
 

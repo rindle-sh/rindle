@@ -21,22 +21,32 @@ primary_region = "iad"
 [env]
   WIKI_DATA_DIR = "/data"
   WIKI_SOURCE = "wikimedia"
-  WIKI_NWORKERS = "3"
+  # One worker per permanently pinned board. A third worker receives every captured batch but owns
+  # no demo query, adding write-path CPU/RSS without useful parallelism.
+  WIKI_NWORKERS = "2"
   WIKI_WINDOW_MIN = "180"
   WIKI_DOMAIN = "en.wikipedia.org"
   WIKI_API_PORT = "7700"
-  # Turns on rindled's read-only Prometheus plane. `[::]` lets Fly's metrics agent scrape it over
-  # the private IPv6 6PN; the `[[metrics]]` block below points the agent at it. Read-only +
-  # unauthenticated by design.
-  RINDLE_METRICS_ADDR = "[::]:9091"
+  # Give each Rust child its own Prometheus listener. Inheriting one RINDLE_METRICS_ADDR made the
+  # master win :9091 and left the follower blind (or vice versa), depending on startup timing.
+  # `[::]` lets Fly's metrics agent scrape both over the private IPv6 6PN.
+  RINDLE_FOLLOWER_METRICS_ADDR = "[::]:9091"
+  RINDLE_MASTER_METRICS_ADDR = "[::]:9092"
 
-# Fly's managed Prometheus scrapes this every ~15s over 6PN (no public exposure). rindled serves
-# the engine gauges (materializations/leases/connections/subscriptions) + build SHA here.
+# Fly's managed Prometheus scrapes both children every ~15s over 6PN (no public exposure).
+# The follower serves materialization/lease/subscription gauges; the master serves write/retention
+# gauges, so a growing journal or stalled local-retention cursor is visible directly.
 [[metrics]]
   port = 9091
   path = "/metrics"
 
-# The wal2 SQLite db + the persisted stream offset. Single-host NVMe; grows online, never shrinks.
+[[metrics]]
+  port = 9092
+  path = "/metrics"
+
+# The HCTree/wal2 database files + stream offset share single-host NVMe. A new deployment image
+# resets only those disposable wiki-owned files and backfills; restarts of the same image preserve
+# them. HCTree journal retention is anchored to the colocated follower's durable cursor.
 [[mounts]]
   source = "wiki_data"
   destination = "/data"

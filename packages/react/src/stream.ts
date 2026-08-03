@@ -1,5 +1,5 @@
 // `useStreamedText` — render an LM response that is arriving on two planes
-// (designs/LM-STREAM-CHECKPOINT-DESIGN.md).
+// (designs-implemented/LM-STREAM-CHECKPOINT-DESIGN.md).
 //
 // The durable plane already flows through IVM like any other data: the app's chat query carries the
 // message row and its un-compacted chunk rows, and `assembleDurableText` turns those into the text

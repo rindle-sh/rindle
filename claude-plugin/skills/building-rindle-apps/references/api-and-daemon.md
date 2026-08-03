@@ -480,6 +480,8 @@ here, in front of the Rindle ingress the browser can never reach directly.
   bodies optimistically.
 - [Server rendering](https://rindle.sh/docs/ssr) — one-shot reads through this same authority for
   first paint.
+- [Streaming LLM responses](https://rindle.sh/docs/llm-streams) — the `streams:` plane on this
+  server: live SSE tokens checkpointed into your own tables.
 - [Deploying & scaling](https://rindle.sh/docs/deploy) — follower affinity and pin fan-out across a
   self-hosted read fleet.
 - [Synced-app quickstart](https://rindle.sh/docs/synced-app-quickstart) — the API tier wired end to end

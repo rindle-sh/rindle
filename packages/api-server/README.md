@@ -71,7 +71,7 @@ boundaries. `streams` splits it into two planes joined by one monotone `seq` (ch
 response): every delta goes straight to subscribers, while the store accumulates **one chunk row per
 checkpoint** — every ~512 characters, on every explicit `flush()`, and at close, where the closing
 write folds the chunks into the message body. Full rationale, frame table, and failure modes:
-`designs/LM-STREAM-CHECKPOINT-DESIGN.md`.
+`designs-implemented/LM-STREAM-CHECKPOINT-DESIGN.md`.
 
 You author both tables — the message row is yours (it carries `chatId`, `role`, the model name), and
 the chunk table is generated for your migration by `streamChunkTableDdl()`. The plane is just told

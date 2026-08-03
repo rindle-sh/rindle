@@ -1,4 +1,4 @@
-// LM stream plane (designs/LM-STREAM-CHECKPOINT-DESIGN.md) — the contract, not the plumbing.
+// LM stream plane (designs-implemented/LM-STREAM-CHECKPOINT-DESIGN.md) — the contract, not the plumbing.
 //
 // The two properties every test here is ultimately about:
 //   S (splice)  durableText(f) ++ concat(frames from f) == producedText, for every join offset and time

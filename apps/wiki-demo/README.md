@@ -2,12 +2,12 @@
 
 A live demo of the one thing rindle is built for: **keep expensive, deeply-nested queries
 permanently prepared, and let many readers share the one materialization each.** A real `rindled`
-daemon keeps **three** nested boards **pinned** (maintained on every write, warm with zero viewers)
-— most-active pages, just-edited pages, and most-active editors — all fed by the *same* edit
-stream under different correlations; a thin Node tier ingests Wikimedia's real edit firehose and
-fronts the data tier; and every browser attaches to the *same* server-side results. Readers load
-instantly; there is nothing to invalidate; the cost tracks the *change*, not the table — and N
-readers cost **one** pipeline each, not N.
+daemon keeps **two** nested boards **pinned** (maintained on every write, warm with zero viewers)
+— just-edited pages and most-recent editors — both fed by the *same* edit stream under different
+correlations; a thin Node tier ingests Wikimedia's real edit firehose and fronts the data tier; and
+every browser attaches to the *same* server-side results. Readers load instantly; there is nothing
+to invalidate; the cost tracks the *change*, not the table — and N readers cost **one** pipeline
+each, not N.
 
 ```text
   Wikimedia             Node tier           HCTree master         read follower       readers
@@ -75,21 +75,28 @@ pnpm install            # at the repo root (single pnpm workspace)
 cd apps/wiki-demo
 pnpm dev            # builds/boots the write-master/follower pair + API/ingester; REAL feed
 pnpm dev:synthetic  # a deterministic, offline synthetic edit stream (no egress needed)
+pnpm test           # source/daemon unit regressions
 pnpm smoke          # offline end-to-end test: starts the pair, drives it with a real client
+pnpm soak           # release-topology bounded-state regression + benchmark output
+pnpm profile        # per-process CPU/RSS profile against the real feed
 ```
 
 `pnpm dev` builds the local `rindle-replicator` and `rindled` binaries, then `src/main.ts` starts the
 colocated pair directly. The fixed demo schema is declared on the master as base `tables`; its
-genesis DDL reaches the bare follower through the same journal (one boot, no `/migrate` step). It
-then starts the Node tier. A container build uses the same path with `RINDLE_REPLICATOR_BIN`,
-`RINDLED_BIN`, and `WIKI_DATA_DIR` set for the image; see [DEPLOY.md](DEPLOY.md).
+genesis DDL reaches the bare follower through the same journal. The Node tier then applies the
+versioned workload-index migration through the master and waits for the follower to observe every
+index before it hydrates the pinned queries. A container build uses the same path with
+`RINDLE_REPLICATOR_BIN`, `RINDLED_BIN`, and `WIKI_DATA_DIR` set for the image; see
+[DEPLOY.md](DEPLOY.md).
 
 - **API + metrics:** `http://127.0.0.1:7700` (`WIKI_API_PORT`) — the lease route
   (`/api/rindle/query`) the page calls, plus `/metrics` (`{ pages, editors, edits, editsInWindow,
-  materializations, leases, vcpus, cpuPercent, memUsedBytes, memLimitBytes, viewers,
-  source, daemonWsUrl, offset }`). `editsInWindow` is the live working set the boards run over (the
-  scale ticker); `materializations` holds the three pinned board pipelines (shared by every tab —
-  that's the dedup) plus a tiny per-client bookkeeping query.
+  materializations, leases, vcpus, cpuPercent, nodeCpuPercent, masterCpuPercent,
+  followerCpuPercent, memUsedBytes, nodeRssBytes, masterRssBytes, followerRssBytes, memLimitBytes,
+  viewers, source, daemonWsUrl, offset }`). `editsInWindow` is the live working set the boards run
+  over (the scale ticker); `materializations` holds the two pinned board pipelines (shared by every
+  tab — that's the dedup) plus a tiny per-client bookkeeping query. Aggregate CPU and RSS include
+  the Node tier, master, and follower; component fields make a hot process visible.
 - **follower:** read/control plane at `portBase+0`, public subscription ws at `portBase+1`.
 - **master:** write ingress at `portBase+11`; its fan-out (`portBase+10`) stays internal to the pair.
 - **ports:** allocated per project (a 100-wide block remembered in `~/.rindle/ports.json`) so this
@@ -98,6 +105,11 @@ then starts the Node tier. A container build uses the same path with `RINDLE_REP
   legacy block is `portBase = 7600`, which reproduces the numbers this doc used to quote.
 - **auth:** `WIKI_DAEMON_TOKEN` (follower) and `WIKI_WRITE_TOKEN` (master); omit both for open
   loopback development.
+
+The demo intentionally starts with empty data on each newly deployed image. Restarts of the same
+image retain its database and applied source offset, while the next image clears only wiki-demo's
+owned files before boot. The follower also applies local retention so replicated journal history
+does not grow without bound.
 
 The frontend (`product-page`, route `/wiki`) reads `VITE_WIKI_API` (default `http://127.0.0.1:7700`)
 and `VITE_WIKI_WS` (default `ws://127.0.0.1:7601`).
@@ -111,7 +123,7 @@ non-bot). It needs outbound access to `stream.wikimedia.org` from the **ingester
 In a sandbox with an egress allowlist, add that host; otherwise the `--source synthetic` stream runs
 anywhere.
 
-**Env:** `WIKI_API_PORT` (7700) · `RINDLED_BIN` · `RINDLE_REPLICATOR_BIN` · `WIKI_DATA_DIR` · `WIKI_NWORKERS` (3) ·
+**Env:** `WIKI_API_PORT` (7700) · `RINDLED_BIN` · `RINDLE_REPLICATOR_BIN` · `WIKI_DATA_DIR` · `WIKI_NWORKERS` (2; one per pinned board) ·
 `WIKI_WINDOW_MIN` (180, the rolling prune window) · `WIKI_BACKFILL_MIN` (cold-start seed depth;
 defaults to the window, `0` disables) · `WIKI_DOMAIN` (en.wikipedia.org) · `WIKI_SOURCE`
 (wikimedia | synthetic) · `WIKI_DAEMON_TOKEN` · `WIKI_WRITE_TOKEN`.

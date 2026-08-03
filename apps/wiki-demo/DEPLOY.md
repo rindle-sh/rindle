@@ -46,9 +46,15 @@ Run deploy commands from the repo root so Fly uses the full workspace as the Doc
 
 ```sh
 apps/wiki-demo/deploy.sh        # Fly first (the origin), then Cloudflare (page + proxy)
+apps/wiki-demo/deploy.sh fly    # backend only; creates a new image and resets demo data
+apps/wiki-demo/deploy.sh cloudflare # frontend/proxy only; does not touch backend data
 ```
 
-Or each piece on its own:
+The selector matters when retrying a partial deploy: if Fly succeeded and Cloudflare failed, retry
+with `apps/wiki-demo/deploy.sh cloudflare`. Running the Fly step again creates another image ref and
+therefore intentionally resets the demo again.
+
+Or invoke each tool directly:
 
 ```sh
 fly deploy --config apps/wiki-demo/fly.toml        # Fly only
@@ -70,8 +76,11 @@ curl https://rindle-wiki-demo.fly.dev/metrics
 #   https://rindle.sh/wiki
 ```
 
-The board fills within a minute or two on first boot; restarts resume from the persisted offset
-(`/data/.offset`) with no gap.
+The board fills within a minute or two on first boot. Ordinary restarts of the same image resume
+from `/data/.offset` with no gap. A new Fly deployment image intentionally removes only the known
+wiki database/config/offset files and backfills a fresh window; its history is disposable, and this
+prevents stale engine/topology state from surviving an upgrade. Unrelated files on the volume are
+never removed.
 
 ## Operate
 
@@ -79,11 +88,25 @@ The board fills within a minute or two on first boot; restarts resume from the p
   (the daemon holds no durable lease state; clients re-lease + re-hydrate).
 - **Grow the volume:** `fly volumes extend <id> --size 3` (online; never shrinks).
 - **Schema:** the fixed demo schema is inlined in `src/daemon.ts` as the master's base tables. The
-  master's genesis DDL creates the bare follower before the API/ingester tier starts.
+  master's genesis DDL creates the bare follower; the Node tier then applies its versioned workload
+  indexes through the master and waits for them to replicate before pin hydration.
+- **Retention:** the master reclaims its HCTree journal to the colocated follower's durable cursor
+  every minute. The two Rust metrics planes are separate (`9091` follower, `9092` master), so Fly
+  can alert on follower/query and master/write/retention health independently.
 - **Knobs** (env in `fly.toml`): `WIKI_WINDOW_MIN` (rolling prune window), `WIKI_NWORKERS`,
   `WIKI_DOMAIN` (which wiki to tail), `WIKI_SOURCE=synthetic` (offline, for debugging without
   egress).
 - **Egress:** the ingester needs outbound to `stream.wikimedia.org` (open on Fly by default).
+
+For a production-shaped local profile, build and run both release engines and sample each process
+separately:
+
+```sh
+pnpm --filter @rindle/wiki-demo profile -- 420 wikimedia
+# elapsed_s, Node/master/follower RSS + CPU, and the bounded-window app counters are emitted as CSV
+```
+
+Use `synthetic` instead of `wikimedia` for a deterministic run without network access.
 
 ## Self-hosting elsewhere
 

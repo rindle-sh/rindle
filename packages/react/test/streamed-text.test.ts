@@ -1,4 +1,4 @@
-// `useStreamedText` (designs/LM-STREAM-CHECKPOINT-DESIGN.md §10.7) — one test per TRAP, because the
+// `useStreamedText` (designs-implemented/LM-STREAM-CHECKPOINT-DESIGN.md §10.7) — one test per TRAP, because the
 // traps are the entire reason this hook exists rather than 20 lines in each app.
 //
 // Real React in jsdom, driven through `act`. The transport is injected: jsdom has no `EventSource`,

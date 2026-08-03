@@ -76,13 +76,13 @@ ENV RINDLE_GIT_SHA=$GIT_SHA
 # condition. main.ts spawns the colocated PAIR (/app/rindle-replicator write-master + /app/rindled
 # follower, both on loopback) with the fixed demo schema as the master's base `tables`, then starts
 # the API/ingester tier (writes → master, reads → follower). The two SQLite db files + the resume
-# offset live on the mounted volume (/data). nWorkers=3 matches the pinned queries.
+# offset live on the mounted volume (/data). Two workers match the two pinned queries.
 ENV RINDLED_BIN=/app/rindled \
     RINDLE_REPLICATOR_BIN=/app/rindle-replicator \
     WIKI_DATA_DIR=/data \
     WIKI_SOURCE=wikimedia \
     WIKI_API_PORT=7700 \
-    WIKI_NWORKERS=3 \
+    WIKI_NWORKERS=2 \
     NODE_ENV=production
 
 EXPOSE 7700

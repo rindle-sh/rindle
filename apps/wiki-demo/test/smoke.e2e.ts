@@ -13,10 +13,12 @@
 //   node --conditions=@rindle/source test/smoke.e2e.ts
 
 import assert from "node:assert/strict";
-import { mkdtempSync } from "node:fs";
+import type { ChildProcess } from "node:child_process";
+import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+import { HttpRindleDaemonClient } from "@rindle/daemon-client";
 import { createRindleClient } from "@rindle/optimistic";
 
 import { startPair } from "../src/daemon.ts";
@@ -42,15 +44,50 @@ function waitFor<T>(
 ): Promise<readonly T[]> {
   return new Promise((resolve, reject) => {
     const t = setTimeout(() => reject(new Error(`timed out waiting for ${label}`)), 8000);
-    const unsub = view.subscribe((data) => {
+    let unsub = () => {};
+    unsub = view.subscribe((data) => {
       const rows = data as readonly T[];
       if (ready(rows)) {
         clearTimeout(t);
-        unsub();
+        // subscribe() can synchronously deliver an already-current snapshot before assigning its
+        // unsubscribe return value. Defer the call one microtask so that path cannot hit the TDZ.
+        queueMicrotask(() => unsub());
         resolve(rows);
       }
     });
   });
+}
+
+function waitForChildExit(proc: ChildProcess, timeoutMs: number): Promise<boolean> {
+  if (proc.exitCode !== null || proc.signalCode !== null) return Promise.resolve(true);
+  return new Promise((resolveExit) => {
+    const finish = (exited: boolean): void => {
+      clearTimeout(timer);
+      proc.off("exit", onExit);
+      proc.off("error", onError);
+      resolveExit(exited);
+    };
+    const onExit = (): void => finish(true);
+    const onError = (): void => finish(false);
+    const timer = setTimeout(() => finish(false), timeoutMs);
+    proc.once("exit", onExit);
+    proc.once("error", onError);
+  });
+}
+
+async function closePairAndRemoveData(): Promise<void> {
+  // Attach first so a fast SIGTERM exit cannot race the waiter, then bound stubborn cleanup before
+  // deleting the database directory the children had open.
+  const graceful = pair.procs.map((proc) => waitForChildExit(proc, 5_000));
+  pair.close();
+  const exited = await Promise.all(graceful);
+  const stubborn = pair.procs.filter((_, index) => !exited[index]);
+  for (const proc of stubborn) proc.kill("SIGKILL");
+  const killed = await Promise.all(stubborn.map((proc) => waitForChildExit(proc, 1_000)));
+  if (killed.some((didExit) => !didExit)) {
+    throw new Error("wiki smoke pair did not exit after SIGKILL; refusing to remove its data directory");
+  }
+  rmSync(dataDir, { recursive: true, force: true });
 }
 
 const dataDir = mkdtempSync(join(tmpdir(), "wiki-smoke-"));
@@ -63,6 +100,8 @@ const machine = await startTinyMachine({
   daemonWsUrl: pair.wsUrl,
   masterUrl: pair.masterUrl,
   sourceName: "synthetic",
+  masterPid: pair.masterPid,
+  followerPid: pair.followerPid,
 });
 const apiUrl = `http://127.0.0.1:${machine.apiPort}`;
 
@@ -73,20 +112,46 @@ const viewA = a.store.materialize(queries.latest());
 
 // Ava edits P-top 3×, Ben edits P-mid 2×, Cyd edits P-low 1× — so the page board AND the editor
 // board have a clear ranking, and Cyd (a one-off editor) is below the editor board's `edits > 1`.
-await machine.ingest([
+const seed = [
   ev("P-top", "Ava", 100), ev("P-top", "Ava", 110), ev("P-top", "Ava", 120), // Ava: 3 edits
   ev("P-mid", "Ben", 105), ev("P-mid", "Ben", 115), // Ben: 2 edits
   ev("P-low", "Cyd", 108), // Cyd: 1 edit
-]);
+];
+await machine.ingest(seed);
+
+// Replaying a committed source batch must be a complete no-op: the edit insert wins the first time,
+// and its changes() bit gates both denormalized parent upserts on the replay.
+await machine.ingest(seed);
+const master = new HttpRindleDaemonClient({ baseUrl: pair.masterUrl });
+const duplicateCounts = await master.executeSqlRead({
+  sql: "SELECT (SELECT COUNT(*) FROM edit), (SELECT SUM(edits) FROM page), (SELECT SUM(edits) FROM editor)",
+  params: [],
+});
+assert.deepEqual(duplicateCounts.rows, [[6, 6, 6]], `replayed edits do not inflate parents: ${JSON.stringify(duplicateCounts)}`);
+
+// EventStreams is only approximately time-ordered. A late older edit still increments the page,
+// but it must not replace the newer row that defines the page board's recency/user.
+const lateOlder = ev("P-top", "LateUser", 90);
+await machine.ingest([lateOlder]);
+const monotonePage = await master.executeSqlRead({
+  sql: "SELECT edits, last_ts, last_user FROM page WHERE id = ?",
+  params: ["enwiki:P-top"],
+  consistency: "strong",
+});
+assert.deepEqual(
+  monotonePage.rows,
+  [[4, 120, "Ava"]],
+  `late older edit preserves newest page fields: ${JSON.stringify(monotonePage)}`,
+);
 
 // The "just edited" board ranks by recency (last_ts). The data is staged so the newest-edited page
 // (P-top, last edit ts 120) leads, then P-mid (115), then P-low (108).
 const rows = await waitFor<PageRow>(viewA, (r) => r.length === 3, "the just-edited snapshot");
 assert.equal(rows[0].title, "P-top", "most-recently-edited page first");
-assert.equal(rows[0].edits, 3, "P-top has 3 edits (count still denormalized, just not the sort key)");
+assert.equal(rows[0].edits, 4, "P-top counts its late edit without regressing the recency sort key");
 assert.equal(rows[1].title, "P-mid");
 assert.equal(rows[2].title, "P-low");
-assert.ok(rows[0].edits_recent && rows[0].edits_recent.length === 3, "top page carries its 3 edits nested");
+assert.ok(rows[0].edits_recent && rows[0].edits_recent.length === 4, "top page carries all 4 edits nested");
 assert.equal(rows[0].edits_recent![0].ts, 120, "newest edit first");
 console.log(`[smoke] OK — just-edited over the 3 tiers: ${rows.length} pages, newest "${rows[0].title}" (ts ${rows[0].last_ts})`);
 
@@ -119,14 +184,25 @@ console.log(`[smoke] OK — two readers, materializations=${metrics.materializat
 // daemon ws directly, not through the tier's proxy where deployed tabs are counted.)
 assert.ok(metrics.vcpus >= 1, `vcpus reported: ${JSON.stringify(metrics)}`);
 assert.ok(metrics.memUsedBytes > 0 && metrics.memUsedBytes <= metrics.memLimitBytes, `memory sane: ${JSON.stringify(metrics)}`);
+assert.ok(metrics.nodeRssBytes > 0, `Node RSS is reported: ${JSON.stringify(metrics)}`);
+assert.ok(metrics.masterRssBytes >= 0 && metrics.followerRssBytes >= 0, `child RSS fields are reported: ${JSON.stringify(metrics)}`);
+assert.equal(
+  metrics.memUsedBytes,
+  metrics.nodeRssBytes + metrics.masterRssBytes + metrics.followerRssBytes,
+  `aggregate RSS includes all three processes: ${JSON.stringify(metrics)}`,
+);
 assert.ok(metrics.cpuPercent === null || (metrics.cpuPercent >= 0 && metrics.cpuPercent <= 100), `cpu% in range: ${JSON.stringify(metrics)}`);
+for (const key of ["nodeCpuPercent", "masterCpuPercent", "followerCpuPercent"] as const) {
+  assert.ok(metrics[key] === null || (metrics[key] >= 0 && metrics[key] <= 100), `${key} in range: ${JSON.stringify(metrics)}`);
+}
 assert.equal(typeof metrics.viewers, "number", `viewers is a number: ${JSON.stringify(metrics)}`);
 console.log(`[smoke] OK — footprint badge: ${metrics.vcpus} vCPU, RSS ${(metrics.memUsedBytes / 1e6).toFixed(0)}MB / ${(metrics.memLimitBytes / 1e6).toFixed(0)}MB, viewers=${metrics.viewers}`);
 
 // A live edit reorders the recency board: three fresh edits to P-low (newest ts 220) lift it to the
 // top of "just edited", and its denormalized count rises to 4 in lockstep.
 const reordered = waitFor<PageRow>(viewA, (r) => r.length === 3 && r[0].title === "P-low", "the reorder");
-await machine.ingest([ev("P-low", "Cyd", 200), ev("P-low", "Cyd", 210), ev("P-low", "Cyd", 220)]);
+const retained = [ev("P-low", "Cyd", 200), ev("P-low", "Cyd", 210), ev("P-low", "Cyd", 220)];
+await machine.ingest(retained);
 const afterReorder = await reordered;
 assert.equal(afterReorder[0].edits, 4, "P-low climbed with 4 edits");
 console.log("[smoke] OK — a fresh edit lifted P-low to the top of just-edited");
@@ -148,6 +224,38 @@ console.log("[smoke] OK — windowed prune removed stale pages, editors + edits 
 a.close();
 b.close();
 await machine.close();
-pair.close();
+
+// An ordinary same-image process restart retains the databases. The new tier must hydrate its
+// bounded telemetry from master truth, then keep a mixed DB-duplicate + fresh transaction exact.
+const restarted = await startTinyMachine({
+  daemonUrl: pair.httpUrl,
+  daemonWsUrl: pair.wsUrl,
+  masterUrl: pair.masterUrl,
+  sourceName: "synthetic-restart",
+  masterPid: pair.masterPid,
+  followerPid: pair.followerPid,
+});
+const restartedApi = `http://127.0.0.1:${restarted.apiPort}`;
+const hydratedMetrics = await (await fetch(`${restartedApi}/metrics`)).json();
+assert.equal(hydratedMetrics.editsInWindow, 3, `restart hydrates retained edits: ${JSON.stringify(hydratedMetrics)}`);
+assert.equal(hydratedMetrics.pages, 1, `restart hydrates retained pages: ${JSON.stringify(hydratedMetrics)}`);
+assert.equal(hydratedMetrics.editors, 1, `restart hydrates retained editors: ${JSON.stringify(hydratedMetrics)}`);
+
+const freshAfterRestart = ev("P-new", "Dana", 230);
+await restarted.ingest([retained[0], freshAfterRestart]);
+await new Promise((resolve) => setTimeout(resolve, 1_050)); // metrics has a one-second TTL
+const mixedMetrics = await (await fetch(`${restartedApi}/metrics`)).json();
+assert.equal(mixedMetrics.editsInWindow, 4, `mixed replay counts only its fresh edit: ${JSON.stringify(mixedMetrics)}`);
+assert.equal(mixedMetrics.pages, 2, `mixed replay keeps exact page cardinality: ${JSON.stringify(mixedMetrics)}`);
+assert.equal(mixedMetrics.editors, 2, `mixed replay keeps exact editor cardinality: ${JSON.stringify(mixedMetrics)}`);
+assert.equal(mixedMetrics.edits, 1, `restart throughput counts only the fresh edit: ${JSON.stringify(mixedMetrics)}`);
+const mixedCounts = await master.executeSqlRead({
+  sql: "SELECT (SELECT COUNT(*) FROM edit), (SELECT SUM(edits) FROM page), (SELECT SUM(edits) FROM editor)",
+  params: [],
+  consistency: "strong",
+});
+assert.deepEqual(mixedCounts.rows, [[4, 4, 4]], `mixed replay keeps SQL parents exact: ${JSON.stringify(mixedCounts)}`);
+await restarted.close();
+await closePairAndRemoveData();
 console.log("[smoke] PASS");
 process.exit(0);

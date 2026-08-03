@@ -3,13 +3,17 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "description": "The tiny machine: a real rindled follower keeps three nested boards (most-active pages, just-edited pages, most-active editors) over Wikimedia's live recentchange firehose permanently pinned (warm with zero viewers) and fans the live results out to many browsers, which SHARE one materialization each. A thin Node tier (API server + ordered ingester) fronts the HCTree master/follower pair and resumes the stream from its offset on restart.",
+  "description": "The tiny machine: a real rindled follower keeps two nested boards (just-edited pages and recent editors) over Wikimedia's live recentchange firehose permanently pinned and fans the live results out to many browsers. A thin Node tier fronts the HCTree master/follower pair with bounded ordered ingestion and pruning.",
   "scripts": {
     "build:daemon": "cargo build --manifest-path ../../rust/Cargo.toml -p rindle-server --bin rindled -p rindle-replicator --bin rindle-replicator",
+    "build:daemon:release": "cargo build --manifest-path ../../rust/Cargo.toml --release --features rindle-replicator/metrics,rindle-server/metrics,rindle-server/analyze -p rindle-server --bin rindled -p rindle-replicator --bin rindle-replicator",
     "dev": "pnpm build:daemon && node --conditions=@rindle/source src/main.ts",
     "dev:synthetic": "pnpm build:daemon && node --conditions=@rindle/source src/main.ts --source synthetic",
+    "profile": "pnpm build:daemon:release && node --conditions=@rindle/source ../../scripts/profile-wiki-rindled.mjs",
     "typecheck": "tsc --noEmit",
-    "smoke": "pnpm build:daemon && node --conditions=@rindle/source test/smoke.e2e.ts"
+    "test": "node --test --conditions=@rindle/source test/*.test.ts",
+    "smoke": "pnpm build:daemon && node --conditions=@rindle/source test/smoke.e2e.ts",
+    "soak": "pnpm build:daemon:release && RINDLED_BIN=../../rust/target/release/rindled RINDLE_REPLICATOR_BIN=../../rust/target/release/rindle-replicator node --conditions=@rindle/source test/soak.e2e.ts"
   },
   "dependencies": {
     "@rindle/api-server": "workspace:*",

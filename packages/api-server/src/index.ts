@@ -123,7 +123,7 @@ export { queryRealtimeLabel, queryResultToAst } from "./rooms.ts";
 export type { RoomProfile, RoomScopeSpec, RoomTableSpec } from "./rooms.ts";
 export type { RealtimeQueryLabel } from "@rindle/client";
 
-// The LM stream plane (designs/LM-STREAM-CHECKPOINT-DESIGN.md): a model response runs on two planes
+// The LM stream plane (designs-implemented/LM-STREAM-CHECKPOINT-DESIGN.md): a model response runs on two planes
 // — every delta straight to subscribers, one chunk row per coarse checkpoint to the app's tables —
 // joined by one monotone `seq`. The plane itself (`StreamPlane`) stays internal; the api-server owns
 // it and feeds it the backend's outside-transaction SQL surface (checkpoints are SYSTEM writes: no
@@ -132,6 +132,7 @@ export {
   STREAM_SSE_HEADERS,
   STREAM_STATUS_STREAMING,
   StreamOpenRefused,
+  StreamRelayConform,
   assembleDurableText,
   frameResumePoint,
   spliceStreamText,
@@ -151,6 +152,8 @@ export type {
   StreamCommitInput,
   StreamFrame,
   StreamHandle,
+  StreamRelay,
+  StreamRelayErrorInfo,
   StreamStatus,
   StreamSubscription,
   StreamTables,
